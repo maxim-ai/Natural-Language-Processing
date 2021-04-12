@@ -1,6 +1,7 @@
 import math
 import random
 import datetime
+from collections import Counter
 
 
 class Spell_Checker:
@@ -19,10 +20,108 @@ class Spell_Checker:
         self.et = error_tables
 
     def spell_check(self, text, alpha):
-        pass
+        # Should input text be normalized in the method or given normalized? !!!
+        str_parts = text.split()
+        if self.check_if_has_wrong_word(str_parts) is not None:
+            pass
+        else:
+            pass
 
     def evaluate(self, text):
         return self.lm.evaluate(text)
+
+    # My methods
+    def check_if_has_wrong_word(self,str_parts):
+        WORDS = self.lm.WORDS
+        for word in str_parts:
+            if word not in WORDS:
+                return word
+        return None
+
+    def get_candidates(self, word):
+        candidates_lst = [] # First cell: one edit candidates, Second cell: two edits candidates
+        one_edit_candidates = self.get_edits_by_one(word)
+        two_edit_candidates = self.get_edits_by_two(one_edit_candidates)
+
+        candidates_lst.append(one_edit_candidates)
+        candidates_lst.append(two_edit_candidates)
+        return candidates_lst
+
+    def get_edits_by_one(self, word):
+        "All edits that are one edit away from `word`."
+        letters = 'abcdefghijklmnopqrstuvwxyz'
+        splits = [(word[:i], word[i:]) for i in range(len(word) + 1)]
+        insertion = self.get_insertion(splits, letters)
+        transposition = self.get_transposition(splits, letters)
+        substitution = self.get_substitution(splits, letters)
+        deletion = self.get_deletion(splits, letters)
+
+        deletion = self.remove_unknown_words(deletion)
+        transposition = self.remove_unknown_words(transposition)
+        substitution = self.remove_unknown_words(substitution)
+        insertion = self.remove_unknown_words(insertion)
+
+        edits_dict = {'deletion':set(deletion), 'transposition':set(transposition),
+                      'substitution':set(substitution), 'insertion':set(insertion)}
+        return edits_dict
+
+    def get_edits_by_two(self, one_edit_candidates):
+        error_types = one_edit_candidates.keys()
+        two_edit_candidates = {f'{error_one}+{error_two}': set() for error_one in error_types for error_two in error_types}
+
+        for error_one, candidate_set_one in one_edit_candidates.items():
+            for tpl_one in candidate_set_one:
+                candidate_one = tpl_one[0]
+                two_letters_one = tpl_one[1]
+                second_edits = self.get_edits_by_one(candidate_one)
+                for error_two, candidate_set_two in second_edits.items():
+                    for tpl_two in candidate_set_two:
+                        candidate_two = tpl_two[0]
+                        two_letters_two = tpl_two[1]
+                        two_edit_candidates[f'{error_one}+{error_two}'].add((candidate_two, f'{two_letters_one}+{two_letters_two}'))
+        return two_edit_candidates
+
+    def get_deletion(self, splits, letters):
+        deletion = []
+        for L, R in splits:
+            for c in letters:
+                if L != '':
+                    deletion.append((L + c + R, L[-1] + c))
+                else:
+                    deletion.append((L + c + R, '#' + c))
+        return deletion
+
+    def get_insertion(self, splits, letters):
+        insertion = []
+        for L, R in splits:
+            if R:
+                if L != '':
+                    insertion.append((L + R[1:], L[-1] + R[0]))
+                else:
+                    insertion.append((L + R[1:], '#' + R[0]))
+        return insertion
+
+    def get_transposition(self, splits, letters):
+        transposition = []
+        for L, R in splits:
+            if len(R) > 1:
+                if R[0] == R[1]: continue
+                transposition.append((L + R[1] + R[0] + R[2:], R[1] + R[0]))
+        return transposition
+
+    def get_substitution(self, splits, letters):
+        substitution = []
+        for L, R in splits:
+            if R:
+                for c in letters:
+                    if c == R[0]: continue
+                    substitution.append((L + c + R[1:], c + R[0]))
+        return substitution
+
+    def remove_unknown_words(self, lst):
+        WORDS = self.lm.WORDS
+        return [tpl for tpl in lst if tpl[0] in WORDS]
+
 
     class Language_Model:
 
@@ -30,8 +129,12 @@ class Spell_Checker:
             self.n = n
             self.chars = chars
             self.model_dict = None # key: N gram, value: how much appeared
+            # For smoothing computition
             self.model_trimmed_dict = {} # key: N-1 gram, value: how much appeared
+            # For generating text from model
             self.model_context_dict = {} # key N-1 gram, value: list of N grams that N-1 gram is their prefix
+            # For spelling correction
+            self.WORDS = None
 
         def build_model(self, text):
             if self.model_dict is None: self.model_dict = {}
@@ -39,6 +142,8 @@ class Spell_Checker:
                 str_parts = text.split()
             else:
                 str_parts = [char for char in text if char != ' '] #Check for correctess !!!
+
+            self.WORDS = self.build_word_vocabulary(str_parts)
 
             dict_lst = [self.model_dict, self.model_trimmed_dict]
             bound_lst = [len(str_parts) - self.n + 1, len(str_parts) - self.n + 2]
@@ -109,6 +214,7 @@ class Spell_Checker:
             lower_c = 0 if trimmed_ngram not in self.model_trimmed_dict else self.model_trimmed_dict[trimmed_ngram]
             return (upper_c+1) / (lower_c+V)
 
+        # My methods
         def choose_sample(self, how):
             if how == 'uniform':
                 context_keys = list(self.model_context_dict.keys())
@@ -120,12 +226,18 @@ class Spell_Checker:
                     context_keys.append(key)
                     weights.append(len(value))
                 return (random.choices(context_keys, weights, k=1))[0]
+        def build_word_vocabulary(self, str_parts):
+            word_set = set()
+            for word in str_parts:
+                word_set.add(word)
+            return word_set
 
 
 
 def normalize_text(text):
     lowered_text = text.lower()
     set_punctuations = {char for char in '''!()-[]{};:'"\,<>./?@#$%^&*_~'''}
+    set_punctuations.add('\n')
     normalized_text = ''
     for index in range(len(lowered_text)):
         if lowered_text[index] not in set_punctuations:
@@ -155,6 +267,7 @@ s_c.add_language_model(l_m)
 # print(l_m.generate('is student',n = 4))
 
 #--- big.txt tests ---#
+# print('#--- big.txt ---#')
 # big = open('big.txt', 'r').read()
 # start = datetime.datetime.now()
 # big_normlized = normalize_text(big)
@@ -164,8 +277,20 @@ s_c.add_language_model(l_m)
 # l_m.build_model(big_normlized)
 # end = datetime.datetime.now()
 # print(f'Building the model took:   {end - start}')
+# print()
+# print()
+# candidate_lst = s_c.get_candidates('appple')
+# for can in candidate_lst:
+#     for k,v in can.items():
+#         if len(v) != 0:
+#             print(f'Error type: {k}')
+#             print(f'Candidates: {v}')
+#             print()
+#             print()
 
 #--- corpus.data tests ---#
+print('#--- corpus.data ---#')
+print()
 corpus = open('corpus.data', 'r').read()
 corpus = ' '.join(corpus.split('<s>'))
 start = datetime.datetime.now()
@@ -176,4 +301,14 @@ start = datetime.datetime.now()
 l_m.build_model(corpus_normlized)
 end = datetime.datetime.now()
 print(f'Building the model took:   {end - start}')
+print()
+print()
+candidate_lst = s_c.get_candidates('appple')
+for can in candidate_lst:
+    for k,v in can.items():
+        if len(v) != 0:
+            print(f'Error type: {k}')
+            print(f'Candidates: {v}')
+            print()
+            print()
 
