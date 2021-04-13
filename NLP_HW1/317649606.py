@@ -1,7 +1,6 @@
 import math
 import random
 import datetime
-from collections import Counter
 
 
 class Spell_Checker:
@@ -22,15 +21,19 @@ class Spell_Checker:
     def spell_check(self, text, alpha):
         # Should input text be normalized in the method or given normalized? !!!
         str_parts = text.split()
-        if self.check_if_has_wrong_word(str_parts) is not None:
-            pass
+        wrong_word = self.check_if_has_wrong_word(str_parts)
+        if wrong_word is not None:
+            if len(str_parts) < self.lm.n:
+                return self.simple_noisy_chanel(wrong_word)
+            else:
+                return self.context_noisy_chanel(str_parts,wrong_word)
         else:
             pass
 
     def evaluate(self, text):
         return self.lm.evaluate(text)
 
-    # My methods
+    # region My method spelling checker
     def check_if_has_wrong_word(self,str_parts):
         WORDS = self.lm.WORDS
         for word in str_parts:
@@ -39,15 +42,11 @@ class Spell_Checker:
         return None
 
     def get_candidates(self, word):
-        candidates_lst = [] # First cell: one edit candidates, Second cell: two edits candidates
         one_edit_candidates = self.get_edits_by_one(word)
-        two_edit_candidates = self.get_edits_by_two(one_edit_candidates)
+        two_edit_candidates = self.get_edits_by_two(self.get_edits_by_one(word,True))
+        return one_edit_candidates, two_edit_candidates
 
-        candidates_lst.append(one_edit_candidates)
-        candidates_lst.append(two_edit_candidates)
-        return candidates_lst
-
-    def get_edits_by_one(self, word):
+    def get_edits_by_one(self, word, two_edits_second_round = False):
         "All edits that are one edit away from `word`."
         letters = 'abcdefghijklmnopqrstuvwxyz'
         splits = [(word[:i], word[i:]) for i in range(len(word) + 1)]
@@ -56,10 +55,11 @@ class Spell_Checker:
         substitution = self.get_substitution(splits, letters)
         deletion = self.get_deletion(splits, letters)
 
-        deletion = self.remove_unknown_words(deletion)
-        transposition = self.remove_unknown_words(transposition)
-        substitution = self.remove_unknown_words(substitution)
-        insertion = self.remove_unknown_words(insertion)
+        if not two_edits_second_round: # For not removing if two edits needed
+            deletion = self.remove_unknown_words(deletion)
+            transposition = self.remove_unknown_words(transposition)
+            substitution = self.remove_unknown_words(substitution)
+            insertion = self.remove_unknown_words(insertion)
 
         edits_dict = {'deletion':set(deletion), 'transposition':set(transposition),
                       'substitution':set(substitution), 'insertion':set(insertion)}
@@ -121,6 +121,113 @@ class Spell_Checker:
     def remove_unknown_words(self, lst):
         WORDS = self.lm.WORDS
         return [tpl for tpl in lst if tpl[0] in WORDS]
+
+    def deletion_normalization(self, string):
+        if string[0] != '#':
+            return len([1 for k in self.lm.WORDS.keys() if string in k])
+        else:
+            return len([1 for k in self.lm.WORDS.keys() if k[0] == string[1]])
+
+    def insertion_normalization(self, string):
+        if string[0] != '#':
+            return len([1 for k in self.lm.WORDS.keys() if string[0] in k])
+        else:
+            return len(self.lm.WORDS)
+
+    def substitution_normlization(self, string):
+        return len([1 for k in self.lm.WORDS.keys() if string[1] in k])
+
+    def transposition_normalization(self, string):
+        return len([1 for k in self.lm.WORDS.keys() if string in k])
+
+    def simple_noisy_chanel(self, word):
+        candidates_mistake_probs = self.calculate_mistake_prob(word)
+        candidates_chanel_probs = []
+        for candidate_mistake_tpl in candidates_mistake_probs:
+            candidate_word = candidate_mistake_tpl[0]
+            mistake_prob = candidate_mistake_tpl[1]
+            candidates_chanel_probs.append((candidate_word,mistake_prob*self.calculate_prior_prob(candidate_word)))
+
+        max_prob_tpl = self.get_tuple_with_max_values(candidates_chanel_probs)
+        return max_prob_tpl[0]
+
+    def context_noisy_chanel(self,str_parts ,word):
+        all_grams_containing_word = self.get_all_grams_contains_the_word(str_parts, word)
+        candidates_mistakes_probs  = self.calculate_mistake_prob(word)
+        candidates_chanel_probs = []
+
+        for candidate_mistake_tpl in candidates_mistakes_probs:
+            candidate_word = candidate_mistake_tpl[0]
+            mistake_prob = candidate_mistake_tpl[1]
+            if mistake_prob == 0: continue
+            all_grams_containing_candidate_word = [gram.replace(word, candidate_word) for gram in all_grams_containing_word]
+            gram_probabilty = 1
+            for gram in all_grams_containing_candidate_word:
+                gram_probabilty *= math.pow(10, self.evaluate(gram))
+            candidates_chanel_probs.append((candidate_word, mistake_prob*gram_probabilty))
+
+        max_prob_tpl = self.get_tuple_with_max_values(candidates_chanel_probs)
+        return max_prob_tpl[0]
+
+
+    def calculate_prior_prob(self, word):
+        WORDS = self.lm.WORDS
+        N = sum(WORDS.values())
+        return (WORDS[word]) / N
+
+    def calculate_mistake_prob(self, word):
+        candidates_mistake_probs = [] # Tuples of (candidate_word, mistake_probabilty)
+        candidates = self.get_candidates(word)
+        one_edit_candidates = candidates[0]
+        two_edit_candidates = candidates[1]
+        norm_methods = {'deletion':self.deletion_normalization, 'insertion': self.insertion_normalization,
+                        'substitution':self.substitution_normlization, 'transposition':self.transposition_normalization}
+
+        for error_type, candidates_letters_tpls in one_edit_candidates.items():
+            for can_let_tpl in candidates_letters_tpls:
+                candidate_word = can_let_tpl[0]
+                letters_modified = can_let_tpl[1]
+                try:
+                    mistake_prob = (self.et[error_type][letters_modified]) / (norm_methods[error_type](letters_modified))
+                except ZeroDivisionError:
+                    mistake_prob = 0
+                candidates_mistake_probs.append((candidate_word, mistake_prob))
+
+        for error_type, candidates_letters_tpls in two_edit_candidates.items():
+            first_error, second_error = error_type.split('+')[0], error_type.split('+')[1]
+            for can_let_tpl in candidates_letters_tpls:
+                candidate_word = can_let_tpl[0]
+                letters_modified = can_let_tpl[1]
+                first_letters_modified, second_letters_modified = letters_modified.split('+')[0], letters_modified.split('+')[1]
+                try:
+                    first_mistake_prob = self.et[first_error][first_letters_modified] / (norm_methods[first_error](first_letters_modified))
+                    second_mistake_prob = self.et[second_error][second_letters_modified] / (norm_methods[second_error](second_letters_modified))
+                    mistake_prob = first_mistake_prob * second_mistake_prob
+                except ZeroDivisionError:
+                    mistake_prob = 0
+                candidates_mistake_probs.append((candidate_word, mistake_prob))
+
+        return candidates_mistake_probs
+
+    def get_all_grams_contains_the_word(self, str_parts, word):
+        all_grams = set()
+        bound = len(str_parts) - self.lm.n + 1
+        N = self.lm.n
+        for i in range(bound):
+            curr_gram = ' '.join(str_parts[i:i + N])
+            all_grams.add(curr_gram)
+        return [gram for gram in all_grams if word in gram]
+
+    def get_tuple_with_max_values(self, lst):
+        max_value_tpl = (0, 0)
+        for tpl in lst:
+            if tpl[1] > max_value_tpl[1]:
+                max_value_tpl = tpl
+        return max_value_tpl
+
+
+
+    # endregion
 
 
     class Language_Model:
@@ -227,10 +334,13 @@ class Spell_Checker:
                     weights.append(len(value))
                 return (random.choices(context_keys, weights, k=1))[0]
         def build_word_vocabulary(self, str_parts):
-            word_set = set()
+            word_dict = {}
             for word in str_parts:
-                word_set.add(word)
-            return word_set
+                if word in word_dict:
+                    word_dict[word] +=1
+                else:
+                    word_dict[word] = 0
+            return word_dict
 
 
 
@@ -259,6 +369,8 @@ def who_am_i():
 s_c = Spell_Checker()
 l_m = s_c.Language_Model(n = 3)
 s_c.add_language_model(l_m)
+from spelling_confusion_matrices import error_tables
+s_c.add_error_tables(error_tables)
 #--- my tests ---#
 # l_m.build_model('Maxim is student and is student')
 # print(l_m.model_dict)
@@ -278,8 +390,7 @@ s_c.add_language_model(l_m)
 # end = datetime.datetime.now()
 # print(f'Building the model took:   {end - start}')
 # print()
-# print()
-# candidate_lst = s_c.get_candidates('appple')
+# candidate_lst = s_c.get_candidates('pple')
 # for can in candidate_lst:
 #     for k,v in can.items():
 #         if len(v) != 0:
@@ -287,6 +398,10 @@ s_c.add_language_model(l_m)
 #             print(f'Candidates: {v}')
 #             print()
 #             print()
+# print(s_c.spell_check('he got a pretty good karacter',0.95))
+# print(s_c.spell_check('i acress the room',0.95))
+# print(s_c.spell_check('i eat appple every day',0.95))
+
 
 #--- corpus.data tests ---#
 print('#--- corpus.data ---#')
@@ -302,13 +417,7 @@ l_m.build_model(corpus_normlized)
 end = datetime.datetime.now()
 print(f'Building the model took:   {end - start}')
 print()
-print()
-candidate_lst = s_c.get_candidates('appple')
-for can in candidate_lst:
-    for k,v in can.items():
-        if len(v) != 0:
-            print(f'Error type: {k}')
-            print(f'Candidates: {v}')
-            print()
-            print()
+print(s_c.spell_check('he got a pretty good karacter',0.95))
+print(s_c.spell_check('i acress the room',0.95))
+print(s_c.spell_check('i eat appple every day',0.95))
 
