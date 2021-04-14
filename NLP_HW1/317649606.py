@@ -42,11 +42,11 @@ class Spell_Checker:
         return None
 
     def get_candidates(self, word):
-        one_edit_candidates = self.get_edits_by_one(word)
-        two_edit_candidates = self.get_edits_by_two(self.get_edits_by_one(word,True))
+        one_edit_candidates = self.get_edits_by_one(word=word)
+        two_edit_candidates = self.get_edits_by_two(self.get_edits_by_one(word = word, two_edits_first_round=True), word)
         return one_edit_candidates, two_edit_candidates
 
-    def get_edits_by_one(self, word, two_edits_second_round = False):
+    def get_edits_by_one(self, word, two_edits_first_round = False, original_word = None):
         "All edits that are one edit away from `word`."
         letters = 'abcdefghijklmnopqrstuvwxyz'
         splits = [(word[:i], word[i:]) for i in range(len(word) + 1)]
@@ -55,17 +55,21 @@ class Spell_Checker:
         substitution = self.get_substitution(splits, letters)
         deletion = self.get_deletion(splits, letters)
 
-        if not two_edits_second_round: # For not removing if two edits needed
-            deletion = self.remove_unknown_words(deletion)
-            transposition = self.remove_unknown_words(transposition)
-            substitution = self.remove_unknown_words(substitution)
-            insertion = self.remove_unknown_words(insertion)
+        if not two_edits_first_round: # For not removing if two edits needed
+            if original_word is not None: word = original_word
+            deletion = self.remove_redundant_words(deletion, word)
+            transposition = self.remove_redundant_words(transposition, word)
+            substitution = self.remove_redundant_words(substitution, word)
+            insertion = self.remove_redundant_words(insertion, word)
 
-        edits_dict = {'deletion':set(deletion), 'transposition':set(transposition),
-                      'substitution':set(substitution), 'insertion':set(insertion)}
+
+        edits_dict = {'deletion':set(deletion),
+                      'transposition':set(transposition),
+                      'substitution':set(substitution),
+                      'insertion':set(insertion)}
         return edits_dict
 
-    def get_edits_by_two(self, one_edit_candidates):
+    def get_edits_by_two(self, one_edit_candidates, original_word):
         error_types = one_edit_candidates.keys()
         two_edit_candidates = {f'{error_one}+{error_two}': set() for error_one in error_types for error_two in error_types}
 
@@ -73,7 +77,7 @@ class Spell_Checker:
             for tpl_one in candidate_set_one:
                 candidate_one = tpl_one[0]
                 two_letters_one = tpl_one[1]
-                second_edits = self.get_edits_by_one(candidate_one)
+                second_edits = self.get_edits_by_one(candidate_one, original_word = original_word)
                 for error_two, candidate_set_two in second_edits.items():
                     for tpl_two in candidate_set_two:
                         candidate_two = tpl_two[0]
@@ -118,9 +122,12 @@ class Spell_Checker:
                     substitution.append((L + c + R[1:], c + R[0]))
         return substitution
 
-    def remove_unknown_words(self, lst):
+    def remove_redundant_words(self, lst, original_word):
         WORDS = self.lm.WORDS
-        return [tpl for tpl in lst if tpl[0] in WORDS]
+        return [tpl for tpl in lst if tpl[0] in WORDS and tpl[0] != original_word]
+
+    def remove_original_word(self, lst, original_word):
+        return [tpl for tpl in lst if tpl[0] != original_word]
 
     def deletion_normalization(self, string):
         if string[0] != '#':
@@ -339,7 +346,7 @@ class Spell_Checker:
                 if word in word_dict:
                     word_dict[word] +=1
                 else:
-                    word_dict[word] = 0
+                    word_dict[word] = 1
             return word_dict
 
 
@@ -379,17 +386,18 @@ s_c.add_error_tables(error_tables)
 # print(l_m.generate('is student',n = 4))
 
 #--- big.txt tests ---#
-# print('#--- big.txt ---#')
-# big = open('big.txt', 'r').read()
-# start = datetime.datetime.now()
-# big_normlized = normalize_text(big)
-# end = datetime.datetime.now()
-# print(f'Normlization took:   {end - start}')
-# start = datetime.datetime.now()
-# l_m.build_model(big_normlized)
-# end = datetime.datetime.now()
-# print(f'Building the model took:   {end - start}')
-# print()
+print('#--- big.txt ---#')
+big = open('big.txt', 'r').read()
+start = datetime.datetime.now()
+big_normlized = normalize_text(big)
+end = datetime.datetime.now()
+print(f'Normlization took:   {end - start}')
+start = datetime.datetime.now()
+l_m.build_model(big_normlized)
+end = datetime.datetime.now()
+print(f'Building the model took:   {end - start}')
+print()
+print(s_c.get_candidates('two'))
 # candidate_lst = s_c.get_candidates('pple')
 # for can in candidate_lst:
 #     for k,v in can.items():
@@ -400,24 +408,25 @@ s_c.add_error_tables(error_tables)
 #             print()
 # print(s_c.spell_check('he got a pretty good karacter',0.95))
 # print(s_c.spell_check('i acress the room',0.95))
+# print(s_c.spell_check('acress put the apple on the table',0.95))
 # print(s_c.spell_check('i eat appple every day',0.95))
 
 
 #--- corpus.data tests ---#
-print('#--- corpus.data ---#')
-print()
-corpus = open('corpus.data', 'r').read()
-corpus = ' '.join(corpus.split('<s>'))
-start = datetime.datetime.now()
-corpus_normlized = normalize_text(corpus)
-end = datetime.datetime.now()
-print(f'Normlization took:   {end - start}')
-start = datetime.datetime.now()
-l_m.build_model(corpus_normlized)
-end = datetime.datetime.now()
-print(f'Building the model took:   {end - start}')
-print()
-print(s_c.spell_check('he got a pretty good karacter',0.95))
-print(s_c.spell_check('i acress the room',0.95))
-print(s_c.spell_check('i eat appple every day',0.95))
+# print('#--- corpus.data ---#')
+# print()
+# corpus = open('corpus.data', 'r').read()
+# corpus = ' '.join(corpus.split('<s>'))
+# start = datetime.datetime.now()
+# corpus_normlized = normalize_text(corpus)
+# end = datetime.datetime.now()
+# print(f'Normlization took:   {end - start}')
+# start = datetime.datetime.now()
+# l_m.build_model(corpus_normlized)
+# end = datetime.datetime.now()
+# print(f'Building the model took:   {end - start}')
+# print()
+# print(s_c.spell_check('he got a pretty good karacter',0.95))
+# print(s_c.spell_check('i acress the room',0.95))
+# print(s_c.spell_check('i eat appple every day',0.95))
 
