@@ -26,9 +26,12 @@ class Spell_Checker:
             if len(str_parts) < self.lm.n:
                 return self.simple_noisy_chanel(wrong_word)
             else:
-                return self.context_noisy_chanel(str_parts,wrong_word)
+                return self.context_noisy_chanel(str_parts,wrong_word)[0]
         else:
-            pass
+            if len(str_parts) < self.lm.n:
+                pass
+            else:
+                return self.real_words_noisy_chanel(str_parts, alpha)[0]
 
     def evaluate(self, text):
         return self.lm.evaluate(text)
@@ -174,8 +177,24 @@ class Spell_Checker:
             candidates_chanel_probs.append((candidate_word, mistake_prob*gram_probabilty))
 
         max_prob_tpl = self.get_tuple_with_max_values(candidates_chanel_probs)
-        return max_prob_tpl[0]
+        return max_prob_tpl
 
+    def real_words_noisy_chanel(self, str_parts, alpha):
+        candidate_for_real_mistake = [] # Tuples of (candidate_word, probability)
+        for word in str_parts:
+            best_context_candidate_tpl = self.context_noisy_chanel(str_parts, word)
+            all_grams_containing_word = self.get_all_grams_contains_the_word(str_parts, word)
+            gram_probability = 1
+            for gram in all_grams_containing_word:
+                gram_probability *= math.pow(10, self.evaluate(gram))
+
+            if alpha * gram_probability > (1-alpha) * best_context_candidate_tpl[1]:
+                candidate_for_real_mistake.append((word, alpha * gram_probability))
+            else:
+                candidate_for_real_mistake.append(best_context_candidate_tpl)
+
+        max_prob_tpl = self.get_tuple_with_max_values(candidate_for_real_mistake)
+        return max_prob_tpl
 
     def calculate_prior_prob(self, word):
         WORDS = self.lm.WORDS
@@ -386,18 +405,18 @@ s_c.add_error_tables(error_tables)
 # print(l_m.generate('is student',n = 4))
 
 #--- big.txt tests ---#
-print('#--- big.txt ---#')
-big = open('big.txt', 'r').read()
-start = datetime.datetime.now()
-big_normlized = normalize_text(big)
-end = datetime.datetime.now()
-print(f'Normlization took:   {end - start}')
-start = datetime.datetime.now()
-l_m.build_model(big_normlized)
-end = datetime.datetime.now()
-print(f'Building the model took:   {end - start}')
-print()
-print(s_c.get_candidates('two'))
+# print('#--- big.txt ---#')
+# big = open('big.txt', 'r').read()
+# start = datetime.datetime.now()
+# big_normlized = normalize_text(big)
+# end = datetime.datetime.now()
+# print(f'Normlization took:   {end - start}')
+# start = datetime.datetime.now()
+# l_m.build_model(big_normlized)
+# end = datetime.datetime.now()
+# print(f'Building the model took:   {end - start}')
+# print()
+# print(s_c.spell_check('two of them apples', 0.95))
 # candidate_lst = s_c.get_candidates('pple')
 # for can in candidate_lst:
 #     for k,v in can.items():
@@ -413,20 +432,25 @@ print(s_c.get_candidates('two'))
 
 
 #--- corpus.data tests ---#
-# print('#--- corpus.data ---#')
-# print()
-# corpus = open('corpus.data', 'r').read()
-# corpus = ' '.join(corpus.split('<s>'))
-# start = datetime.datetime.now()
-# corpus_normlized = normalize_text(corpus)
-# end = datetime.datetime.now()
-# print(f'Normlization took:   {end - start}')
-# start = datetime.datetime.now()
-# l_m.build_model(corpus_normlized)
-# end = datetime.datetime.now()
-# print(f'Building the model took:   {end - start}')
-# print()
+print('#--- corpus.data ---#')
+print()
+corpus = open('corpus.data', 'r').read()
+corpus = ' '.join(corpus.split('<s>'))
+start = datetime.datetime.now()
+corpus_normlized = normalize_text(corpus)
+end = datetime.datetime.now()
+print(f'Normlization took:   {end - start}')
+start = datetime.datetime.now()
+l_m.build_model(corpus_normlized)
+end = datetime.datetime.now()
+print(f'Building the model took:   {end - start}')
+print()
 # print(s_c.spell_check('he got a pretty good karacter',0.95))
 # print(s_c.spell_check('i acress the room',0.95))
 # print(s_c.spell_check('i eat appple every day',0.95))
+start = datetime.datetime.now()
+print(s_c.spell_check('two orf the apples', 0.95))
+end = datetime.datetime.now()
+print(f'Correction of the sentence took: {end - start}')
+
 
