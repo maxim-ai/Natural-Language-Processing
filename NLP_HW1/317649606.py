@@ -32,7 +32,8 @@ class Spell_Checker:
                 return ' '.join([part if part != wrong_word else fixed_word for part in str_parts])
         else:
             if len(str_parts) < self.lm.n:
-                pass
+                fixed_word, wrong_word = self.simple_real_words_noisy_chanel(str_parts, alpha)
+                return (' '.join(str_parts)).replace(wrong_word, fixed_word)
             else:
                 fixed_word, wrong_word = self.context_real_words_noisy_chanel(str_parts, alpha)
                 return (' '.join(str_parts)).replace(wrong_word, fixed_word)
@@ -131,7 +132,7 @@ class Spell_Checker:
         if string in self.normalization_dict['deletion']:
             return self.normalization_dict['deletion'][string]
         if string[0] != '#':
-            count_appearences = len([1 for k in self.lm.WORDS.keys() if string in k])
+            count_appearences = sum([k.count(string) for k in self.lm.WORDS.keys()])
         else:
             count_appearences = len([1 for k in self.lm.WORDS.keys() if k[0] == string[1]])
         self.normalization_dict['deletion'][string] = count_appearences
@@ -141,7 +142,7 @@ class Spell_Checker:
         if string in self.normalization_dict['insertion']:
             return self.normalization_dict['insertion'][string]
         if string[0] != '#':
-            count_appearences = len([1 for k in self.lm.WORDS.keys() if string[0] in k])
+            count_appearences = sum([k.count(string[0]) for k in self.lm.WORDS.keys()])
         else:
             count_appearences = len(self.lm.WORDS)
         self.normalization_dict['insertion'][string] = count_appearences
@@ -150,14 +151,14 @@ class Spell_Checker:
     def substitution_normalization(self, string):
         if string in self.normalization_dict['substitution']:
             return self.normalization_dict['substitution'][string]
-        count_appearences = len([1 for k in self.lm.WORDS.keys() if string[1] in k])
+        count_appearences = sum([k.count(string[1]) for k in self.lm.WORDS.keys()])
         self.normalization_dict['substitution'][string] = count_appearences
         return count_appearences
 
     def transposition_normalization(self, string):
         if string in self.normalization_dict['transposition']:
             return self.normalization_dict['transposition'][string]
-        count_appearences = len([1 for k in self.lm.WORDS.keys() if string in k])
+        count_appearences = sum([k.count(string) for k in self.lm.WORDS.keys()])
         self.normalization_dict['transposition'][string] = count_appearences
         return count_appearences
     # endregion
@@ -191,8 +192,21 @@ class Spell_Checker:
         max_prob_tpl = self.get_tuple_with_max_values(candidates_chanel_probs)
         return max_prob_tpl
 
+    def simple_real_words_noisy_chanel(self, str_parts, alpha):
+        candidates_for_real_mistake = {}
+        for word in str_parts:
+            best_simple_candidate_word = self.simple_noisy_chanel(word)
+            prior_probability = self.calculate_prior_prob(word)
+            if alpha * prior_probability > (1 - alpha) * best_simple_candidate_word[1]:
+                candidates_for_real_mistake[(word, prior_probability)] = word
+            else:
+                candidates_for_real_mistake[best_simple_candidate_word] = word
+
+        max_prob_tpl = self.get_tuple_with_max_values(list(candidates_for_real_mistake.keys()))
+        return max_prob_tpl[0], candidates_for_real_mistake[max_prob_tpl]
+
     def context_real_words_noisy_chanel(self, str_parts, alpha):
-        candidate_for_real_mistake = {} # Key: Tuple of (candidate_word, probability), Value: Original word
+        candidates_for_real_mistake = {} # Key: Tuple of (candidate_word, probability), Value: Original word
         for word in str_parts:
             best_context_candidate_tpl = self.context_noisy_chanel(str_parts, word)
             all_grams_containing_word = self.get_all_grams_contains_the_word(str_parts, word)
@@ -200,13 +214,17 @@ class Spell_Checker:
             for gram in all_grams_containing_word:
                 gram_probability *= math.pow(10, self.evaluate(gram))
 
-            if alpha * gram_probability > (1 - alpha) * best_context_candidate_tpl[1]:
-                candidate_for_real_mistake[(word, alpha * gram_probability)] = word
+            if alpha * gram_probability > best_context_candidate_tpl[1]:
+                candidates_for_real_mistake[(word, alpha * gram_probability)] = word
             else:
-                candidate_for_real_mistake[best_context_candidate_tpl] = word
+                candidates_for_real_mistake[best_context_candidate_tpl] = word
 
-        max_prob_tpl = self.get_tuple_with_max_values(list(candidate_for_real_mistake.keys()))
-        return max_prob_tpl[0], candidate_for_real_mistake[max_prob_tpl]
+        temp_candidate_dict = {tpl:original_word for tpl, original_word in candidates_for_real_mistake.items() if tpl[0] != original_word}
+        if len(temp_candidate_dict) != 0:
+            candidates_for_real_mistake = temp_candidate_dict
+
+        max_prob_tpl = self.get_tuple_with_max_values(list(candidates_for_real_mistake.keys()))
+        return max_prob_tpl[0], candidates_for_real_mistake[max_prob_tpl]
 
     def calculate_prior_prob(self, word):
         WORDS = self.lm.WORDS
@@ -254,13 +272,13 @@ class Spell_Checker:
 
     # region Helpful methods
     def get_all_grams_contains_the_word(self, str_parts, word):
-        all_grams = set()
+        all_grams = []
         bound = len(str_parts) - self.lm.n + 1
         N = self.lm.n
         for i in range(bound):
             curr_gram = ' '.join(str_parts[i:i + N])
-            all_grams.add(curr_gram)
-        return [gram for gram in all_grams if word in gram]
+            all_grams.append(curr_gram)
+        return [gram for gram in all_grams if word in gram.split()]
 
     def get_tuple_with_max_values(self, lst):
         max_value_tpl = (0, 0)
@@ -307,7 +325,7 @@ class Spell_Checker:
             if not self.chars:
                 str_parts = text.split()
             else:
-                str_parts = [char for char in text if char != ' '] #Check for correctess !!!
+                str_parts = [char for char in text] #Check for correctess !!!
 
             self.WORDS = self.build_word_vocabulary(str_parts)
 
@@ -429,20 +447,26 @@ def who_am_i():
 
 
 #---------------------------- Tests ----------------------------#
+alpha = 0.95
+sentences_wrong_words = ['he got a pretty good karacter',
+                         'i acress the room',
+                         'the famous acress',
+                         'acress put the apple on the table',
+                         'i eat appple every day']
+
+sentences_real_words = ['two of they kind',
+                        'two of threw apples']
+
+
+
+#--- big.txt tests ---#
 s_c = Spell_Checker()
 l_m = s_c.Language_Model(n = 3)
 s_c.add_language_model(l_m)
 from spelling_confusion_matrices import error_tables
 s_c.add_error_tables(error_tables)
-#--- my tests ---#
-# l_m.build_model('Maxim is student and is student')
-# print(l_m.model_dict)
-# print(l_m.model_trimmed_dict)
-# print(l_m.model_context_dict)
-# print(l_m.generate('is student',n = 4))
 
-#--- big.txt tests ---#
-print('#--- big.txt ---#')
+print('\n#--------------------- big.txt ---------------------#')
 big = open('big.txt', 'r').read()
 start = datetime.datetime.now()
 big_normlized = normalize_text(big)
@@ -451,37 +475,39 @@ print(f'Normlization took:   {end - start}')
 start = datetime.datetime.now()
 l_m.build_model(big_normlized)
 end = datetime.datetime.now()
-print(f'Building the model took:   {end - start}')
-print()
-print(s_c.spell_check('two of them apples', 0.95))
-print(s_c.spell_check('he got a pretty good karacter',0.95))
-print(s_c.spell_check('i acress the room',0.95))
-print(s_c.spell_check('the famous acress',0.95))
-print(s_c.spell_check('acress put the apple on the table',0.95))
-print(s_c.spell_check('i eat appple every day',0.95))
+print(f'Building the model took:   {end - start}\n')
+print('-Wrong words sentences-')
+for sentence in sentences_wrong_words:
+    print(f'Wrong sentence: {sentence}\nCorrection: {s_c.spell_check(sentence,alpha)}\n')
+print('-Real words sentences-')
+for sentence in sentences_real_words:
+    print(f'Wrong sentence: {sentence}\nCorrection: {s_c.spell_check(sentence,alpha)}\n')
 
 
 #--- corpus.data tests ---#
-# print('#--- corpus.data ---#')
-# print()
-# corpus = open('corpus.data', 'r').read()
-# corpus = ' '.join(corpus.split('<s>'))
-# start = datetime.datetime.now()
-# corpus_normlized = normalize_text(corpus)
-# end = datetime.datetime.now()
-# print(f'Normlization took:   {end - start}')
-# start = datetime.datetime.now()
-# l_m.build_model(corpus_normlized)
-# end = datetime.datetime.now()
-# print(f'Building the model took:   {end - start}')
-# print()
-# print(s_c.spell_check('he got a pretty good karacter',0.95))
-# print(s_c.spell_check('i acress the room',0.95))
-# print(s_c.spell_check('acress put the apple on the table',0.95))
-# print(s_c.spell_check('i eat appple every day',0.95))
-# start = datetime.datetime.now()
-# print(s_c.spell_check('two of the kings', 0.95))
-# end = datetime.datetime.now()
-# print(f'Correction of the sentence took: {end - start}')
+s_c = Spell_Checker()
+l_m = s_c.Language_Model(n = 3)
+s_c.add_language_model(l_m)
+from spelling_confusion_matrices import error_tables
+s_c.add_error_tables(error_tables)
+
+print('\n#--------------------- corpus.data ---------------------#')
+corpus = open('corpus.data', 'r').read()
+corpus = ' '.join(corpus.split('<s>'))
+start = datetime.datetime.now()
+corpus_normlized = normalize_text(corpus)
+end = datetime.datetime.now()
+print(f'Normlization took:   {end - start}')
+start = datetime.datetime.now()
+l_m.build_model(corpus_normlized)
+end = datetime.datetime.now()
+print(f'Building the model took:   {end - start}\n')
+print('-Wrong words sentences-')
+for sentence in sentences_wrong_words:
+    print(f'Wrong sentence: {sentence}\nCorrection: {s_c.spell_check(sentence,alpha)}\n')
+print('-Real words sentences-')
+for sentence in sentences_real_words:
+    print(f'Wrong sentence: {sentence}\nCorrection: {s_c.spell_check(sentence,alpha)}\n')
+
 
 
