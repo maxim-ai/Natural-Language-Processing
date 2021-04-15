@@ -8,6 +8,7 @@ class Spell_Checker:
     def __init__(self, lm = None):
         self.lm = lm
         self.et = None
+        self.normalization_dict = {'deletion':{}, 'insertion':{}, 'substitution':{}, 'transposition':{}}
 
     def add_language_model(self, lm):
         self.lm = lm
@@ -24,26 +25,25 @@ class Spell_Checker:
         wrong_word = self.check_if_has_wrong_word(str_parts)
         if wrong_word is not None:
             if len(str_parts) < self.lm.n:
-                return self.simple_noisy_chanel(wrong_word)
+                fixed_word = self.simple_noisy_chanel(wrong_word)[0]
+                return ' '.join([part if part!= wrong_word else fixed_word for part in str_parts])
             else:
-                return self.context_noisy_chanel(str_parts,wrong_word)[0]
+                fixed_word = self.context_noisy_chanel(str_parts,wrong_word)[0]
+                return ' '.join([part if part != wrong_word else fixed_word for part in str_parts])
         else:
             if len(str_parts) < self.lm.n:
                 pass
             else:
-                return self.real_words_noisy_chanel(str_parts, alpha)[0]
+                fixed_word, wrong_word = self.context_real_words_noisy_chanel(str_parts, alpha)
+                return (' '.join(str_parts)).replace(wrong_word, fixed_word)
 
     def evaluate(self, text):
         return self.lm.evaluate(text)
 
     # region My method spelling checker
-    def check_if_has_wrong_word(self,str_parts):
-        WORDS = self.lm.WORDS
-        for word in str_parts:
-            if word not in WORDS:
-                return word
-        return None
 
+
+    # region Get edit candidates
     def get_candidates(self, word):
         one_edit_candidates = self.get_edits_by_one(word=word)
         two_edit_candidates = self.get_edits_by_two(self.get_edits_by_one(word = word, two_edits_first_round=True), word)
@@ -124,31 +124,43 @@ class Spell_Checker:
                     if c == R[0]: continue
                     substitution.append((L + c + R[1:], c + R[0]))
         return substitution
+    # endregion
 
-    def remove_redundant_words(self, lst, original_word):
-        WORDS = self.lm.WORDS
-        return [tpl for tpl in lst if tpl[0] in WORDS and tpl[0] != original_word]
-
-    def remove_original_word(self, lst, original_word):
-        return [tpl for tpl in lst if tpl[0] != original_word]
-
+    # region Normzalization methods
     def deletion_normalization(self, string):
+        if string in self.normalization_dict['deletion']:
+            return self.normalization_dict['deletion'][string]
         if string[0] != '#':
-            return len([1 for k in self.lm.WORDS.keys() if string in k])
+            count_appearences = len([1 for k in self.lm.WORDS.keys() if string in k])
         else:
-            return len([1 for k in self.lm.WORDS.keys() if k[0] == string[1]])
+            count_appearences = len([1 for k in self.lm.WORDS.keys() if k[0] == string[1]])
+        self.normalization_dict['deletion'][string] = count_appearences
+        return count_appearences
 
     def insertion_normalization(self, string):
+        if string in self.normalization_dict['insertion']:
+            return self.normalization_dict['insertion'][string]
         if string[0] != '#':
-            return len([1 for k in self.lm.WORDS.keys() if string[0] in k])
+            count_appearences = len([1 for k in self.lm.WORDS.keys() if string[0] in k])
         else:
-            return len(self.lm.WORDS)
+            count_appearences = len(self.lm.WORDS)
+        self.normalization_dict['insertion'][string] = count_appearences
+        return count_appearences
 
-    def substitution_normlization(self, string):
-        return len([1 for k in self.lm.WORDS.keys() if string[1] in k])
+    def substitution_normalization(self, string):
+        if string in self.normalization_dict['substitution']:
+            return self.normalization_dict['substitution'][string]
+        count_appearences = len([1 for k in self.lm.WORDS.keys() if string[1] in k])
+        self.normalization_dict['substitution'][string] = count_appearences
+        return count_appearences
 
     def transposition_normalization(self, string):
-        return len([1 for k in self.lm.WORDS.keys() if string in k])
+        if string in self.normalization_dict['transposition']:
+            return self.normalization_dict['transposition'][string]
+        count_appearences = len([1 for k in self.lm.WORDS.keys() if string in k])
+        self.normalization_dict['transposition'][string] = count_appearences
+        return count_appearences
+    # endregion
 
     def simple_noisy_chanel(self, word):
         candidates_mistake_probs = self.calculate_mistake_prob(word)
@@ -159,7 +171,7 @@ class Spell_Checker:
             candidates_chanel_probs.append((candidate_word,mistake_prob*self.calculate_prior_prob(candidate_word)))
 
         max_prob_tpl = self.get_tuple_with_max_values(candidates_chanel_probs)
-        return max_prob_tpl[0]
+        return max_prob_tpl
 
     def context_noisy_chanel(self,str_parts ,word):
         all_grams_containing_word = self.get_all_grams_contains_the_word(str_parts, word)
@@ -179,8 +191,8 @@ class Spell_Checker:
         max_prob_tpl = self.get_tuple_with_max_values(candidates_chanel_probs)
         return max_prob_tpl
 
-    def real_words_noisy_chanel(self, str_parts, alpha):
-        candidate_for_real_mistake = [] # Tuples of (candidate_word, probability)
+    def context_real_words_noisy_chanel(self, str_parts, alpha):
+        candidate_for_real_mistake = {} # Key: Tuple of (candidate_word, probability), Value: Original word
         for word in str_parts:
             best_context_candidate_tpl = self.context_noisy_chanel(str_parts, word)
             all_grams_containing_word = self.get_all_grams_contains_the_word(str_parts, word)
@@ -188,13 +200,13 @@ class Spell_Checker:
             for gram in all_grams_containing_word:
                 gram_probability *= math.pow(10, self.evaluate(gram))
 
-            if alpha * gram_probability > (1-alpha) * best_context_candidate_tpl[1]:
-                candidate_for_real_mistake.append((word, alpha * gram_probability))
+            if alpha * gram_probability > (1 - alpha) * best_context_candidate_tpl[1]:
+                candidate_for_real_mistake[(word, alpha * gram_probability)] = word
             else:
-                candidate_for_real_mistake.append(best_context_candidate_tpl)
+                candidate_for_real_mistake[best_context_candidate_tpl] = word
 
-        max_prob_tpl = self.get_tuple_with_max_values(candidate_for_real_mistake)
-        return max_prob_tpl
+        max_prob_tpl = self.get_tuple_with_max_values(list(candidate_for_real_mistake.keys()))
+        return max_prob_tpl[0], candidate_for_real_mistake[max_prob_tpl]
 
     def calculate_prior_prob(self, word):
         WORDS = self.lm.WORDS
@@ -207,14 +219,16 @@ class Spell_Checker:
         one_edit_candidates = candidates[0]
         two_edit_candidates = candidates[1]
         norm_methods = {'deletion':self.deletion_normalization, 'insertion': self.insertion_normalization,
-                        'substitution':self.substitution_normlization, 'transposition':self.transposition_normalization}
+                        'substitution':self.substitution_normalization, 'transposition':self.transposition_normalization}
 
         for error_type, candidates_letters_tpls in one_edit_candidates.items():
             for can_let_tpl in candidates_letters_tpls:
                 candidate_word = can_let_tpl[0]
                 letters_modified = can_let_tpl[1]
                 try:
-                    mistake_prob = (self.et[error_type][letters_modified]) / (norm_methods[error_type](letters_modified))
+                    error_model_prob = self.et[error_type][letters_modified]
+                    if error_model_prob == 0: continue
+                    mistake_prob = error_model_prob / (norm_methods[error_type](letters_modified))
                 except ZeroDivisionError:
                     mistake_prob = 0
                 candidates_mistake_probs.append((candidate_word, mistake_prob))
@@ -226,8 +240,11 @@ class Spell_Checker:
                 letters_modified = can_let_tpl[1]
                 first_letters_modified, second_letters_modified = letters_modified.split('+')[0], letters_modified.split('+')[1]
                 try:
-                    first_mistake_prob = self.et[first_error][first_letters_modified] / (norm_methods[first_error](first_letters_modified))
-                    second_mistake_prob = self.et[second_error][second_letters_modified] / (norm_methods[second_error](second_letters_modified))
+                    error_model_prob_one = self.et[first_error][first_letters_modified]
+                    error_model_prob_two = self.et[second_error][second_letters_modified]
+                    if error_model_prob_one == 0 or error_model_prob_two == 0: continue
+                    first_mistake_prob = error_model_prob_one / (norm_methods[first_error](first_letters_modified))
+                    second_mistake_prob = error_model_prob_two / (norm_methods[second_error](second_letters_modified))
                     mistake_prob = first_mistake_prob * second_mistake_prob
                 except ZeroDivisionError:
                     mistake_prob = 0
@@ -235,6 +252,7 @@ class Spell_Checker:
 
         return candidates_mistake_probs
 
+    # region Helpful methods
     def get_all_grams_contains_the_word(self, str_parts, word):
         all_grams = set()
         bound = len(str_parts) - self.lm.n + 1
@@ -251,11 +269,26 @@ class Spell_Checker:
                 max_value_tpl = tpl
         return max_value_tpl
 
+    def check_if_has_wrong_word(self, str_parts):
+        WORDS = self.lm.WORDS
+        for word in str_parts:
+            if word not in WORDS:
+                return word
+        return None
+
+    def remove_redundant_words(self, lst, original_word):
+        WORDS = self.lm.WORDS
+        return [tpl for tpl in lst if tpl[0] in WORDS and tpl[0] != original_word]
+
+    def remove_original_word(self, lst, original_word):
+        return [tpl for tpl in lst if tpl[0] != original_word]
+    # endregion
 
 
     # endregion
 
 
+    # region Language model inner class
     class Language_Model:
 
         def __init__(self, n=3, chars = False):
@@ -359,6 +392,7 @@ class Spell_Checker:
                     context_keys.append(key)
                     weights.append(len(value))
                 return (random.choices(context_keys, weights, k=1))[0]
+
         def build_word_vocabulary(self, str_parts):
             word_dict = {}
             for word in str_parts:
@@ -367,9 +401,11 @@ class Spell_Checker:
                 else:
                     word_dict[word] = 1
             return word_dict
+    # endregion
 
 
 
+# region Normalization and WhoAmI methods
 def normalize_text(text):
     lowered_text = text.lower()
     set_punctuations = {char for char in '''!()-[]{};:'"\,<>./?@#$%^&*_~'''}
@@ -389,6 +425,7 @@ def normalize_text(text):
 
 def who_am_i():
     return {'name':'Maxim Zhivodrov', 'id':'317649606', 'email':'maximzh@post.bgu.ac.il'}
+# endregion
 
 
 #---------------------------- Tests ----------------------------#
@@ -405,52 +442,46 @@ s_c.add_error_tables(error_tables)
 # print(l_m.generate('is student',n = 4))
 
 #--- big.txt tests ---#
-# print('#--- big.txt ---#')
-# big = open('big.txt', 'r').read()
+print('#--- big.txt ---#')
+big = open('big.txt', 'r').read()
+start = datetime.datetime.now()
+big_normlized = normalize_text(big)
+end = datetime.datetime.now()
+print(f'Normlization took:   {end - start}')
+start = datetime.datetime.now()
+l_m.build_model(big_normlized)
+end = datetime.datetime.now()
+print(f'Building the model took:   {end - start}')
+print()
+print(s_c.spell_check('two of them apples', 0.95))
+print(s_c.spell_check('he got a pretty good karacter',0.95))
+print(s_c.spell_check('i acress the room',0.95))
+print(s_c.spell_check('the famous acress',0.95))
+print(s_c.spell_check('acress put the apple on the table',0.95))
+print(s_c.spell_check('i eat appple every day',0.95))
+
+
+#--- corpus.data tests ---#
+# print('#--- corpus.data ---#')
+# print()
+# corpus = open('corpus.data', 'r').read()
+# corpus = ' '.join(corpus.split('<s>'))
 # start = datetime.datetime.now()
-# big_normlized = normalize_text(big)
+# corpus_normlized = normalize_text(corpus)
 # end = datetime.datetime.now()
 # print(f'Normlization took:   {end - start}')
 # start = datetime.datetime.now()
-# l_m.build_model(big_normlized)
+# l_m.build_model(corpus_normlized)
 # end = datetime.datetime.now()
 # print(f'Building the model took:   {end - start}')
 # print()
-# print(s_c.spell_check('two of them apples', 0.95))
-# candidate_lst = s_c.get_candidates('pple')
-# for can in candidate_lst:
-#     for k,v in can.items():
-#         if len(v) != 0:
-#             print(f'Error type: {k}')
-#             print(f'Candidates: {v}')
-#             print()
-#             print()
 # print(s_c.spell_check('he got a pretty good karacter',0.95))
 # print(s_c.spell_check('i acress the room',0.95))
 # print(s_c.spell_check('acress put the apple on the table',0.95))
 # print(s_c.spell_check('i eat appple every day',0.95))
-
-
-#--- corpus.data tests ---#
-print('#--- corpus.data ---#')
-print()
-corpus = open('corpus.data', 'r').read()
-corpus = ' '.join(corpus.split('<s>'))
-start = datetime.datetime.now()
-corpus_normlized = normalize_text(corpus)
-end = datetime.datetime.now()
-print(f'Normlization took:   {end - start}')
-start = datetime.datetime.now()
-l_m.build_model(corpus_normlized)
-end = datetime.datetime.now()
-print(f'Building the model took:   {end - start}')
-print()
-# print(s_c.spell_check('he got a pretty good karacter',0.95))
-# print(s_c.spell_check('i acress the room',0.95))
-# print(s_c.spell_check('i eat appple every day',0.95))
-start = datetime.datetime.now()
-print(s_c.spell_check('two orf the apples', 0.95))
-end = datetime.datetime.now()
-print(f'Correction of the sentence took: {end - start}')
+# start = datetime.datetime.now()
+# print(s_c.spell_check('two of the kings', 0.95))
+# end = datetime.datetime.now()
+# print(f'Correction of the sentence took: {end - start}')
 
 
