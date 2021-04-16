@@ -180,9 +180,7 @@ class Spell_Checker:
         candidates_chanel_probs = []
 
         for candidate_mistake_tpl in candidates_mistakes_probs:
-            candidate_word = candidate_mistake_tpl[0]
-            mistake_prob = candidate_mistake_tpl[1]
-            if mistake_prob == 0: continue
+            candidate_word, mistake_prob = candidate_mistake_tpl
             all_grams_containing_candidate_word = [gram.replace(word, candidate_word) for gram in all_grams_containing_word]
             gram_probabilty = 1
             for gram in all_grams_containing_candidate_word:
@@ -233,9 +231,7 @@ class Spell_Checker:
 
     def calculate_mistake_prob(self, word):
         candidates_mistake_probs = [] # Tuples of (candidate_word, mistake_probabilty)
-        candidates = self.get_candidates(word)
-        one_edit_candidates = candidates[0]
-        two_edit_candidates = candidates[1]
+        one_edit_candidates, two_edit_candidates = self.get_candidates(word)
         norm_methods = {'deletion':self.deletion_normalization, 'insertion': self.insertion_normalization,
                         'substitution':self.substitution_normalization, 'transposition':self.transposition_normalization}
 
@@ -247,9 +243,9 @@ class Spell_Checker:
                     error_model_prob = self.et[error_type][letters_modified]
                     if error_model_prob == 0: continue
                     mistake_prob = error_model_prob / (norm_methods[error_type](letters_modified))
-                except ZeroDivisionError:
-                    mistake_prob = 0
-                candidates_mistake_probs.append((candidate_word, mistake_prob))
+                except (ZeroDivisionError, KeyError): mistake_prob = 0
+                if mistake_prob != 0:
+                    candidates_mistake_probs.append((candidate_word, mistake_prob))
 
         for error_type, candidates_letters_tpls in two_edit_candidates.items():
             first_error, second_error = error_type.split('+')[0], error_type.split('+')[1]
@@ -264,9 +260,9 @@ class Spell_Checker:
                     first_mistake_prob = error_model_prob_one / (norm_methods[first_error](first_letters_modified))
                     second_mistake_prob = error_model_prob_two / (norm_methods[second_error](second_letters_modified))
                     mistake_prob = first_mistake_prob * second_mistake_prob
-                except ZeroDivisionError:
-                    mistake_prob = 0
-                candidates_mistake_probs.append((candidate_word, mistake_prob))
+                except (ZeroDivisionError, KeyError): mistake_prob = 0
+                if mistake_prob != 0:
+                    candidates_mistake_probs.append((candidate_word, mistake_prob))
 
         return candidates_mistake_probs
 
@@ -327,7 +323,7 @@ class Spell_Checker:
             else:
                 str_parts = [char for char in text] #Check for correctess !!!
 
-            self.WORDS = self.build_word_vocabulary(str_parts)
+            self.WORDS = self.build_word_vocabulary(str_parts) if not self.chars else self.build_word_vocabulary(text.split())
 
             dict_lst = [self.model_dict, self.model_trimmed_dict]
             bound_lst = [len(str_parts) - self.n + 1, len(str_parts) - self.n + 2]
@@ -366,7 +362,11 @@ class Spell_Checker:
                 # if sampling is by choise
                 context = self.choose_sample('choise') # Check for right sampling !!!
 
-            generated_text = context.split()
+            if not self.chars:
+                generated_text = context.split()
+            else:
+                generated_text = [char for char in context]
+
             while len(generated_text) < n:
                 last_context = generated_text[-(self.n-1):]
                 try:
@@ -377,7 +377,10 @@ class Spell_Checker:
             return ' '.join(generated_text)
 
         def evaluate(self, text):
-            str_parts = text.split()
+            if not self.chars:
+                str_parts = text.split()
+            else:
+                str_parts = [char for char in text]
             bound = len(str_parts) - self.n + 1
             N = self.n
             prob = 1
@@ -452,7 +455,8 @@ sentences_wrong_words = ['he got a pretty good karacter',
                          'i acress the room',
                          'the famous acress',
                          'acress put the apple on the table',
-                         'i eat appple every day']
+                         'i eat appple every day',
+                         'todat i went to school']
 
 sentences_real_words = ['two of they kind',
                         'two of threw apples']
@@ -460,8 +464,9 @@ sentences_real_words = ['two of they kind',
 
 
 #--- big.txt tests ---#
+chars = False
 s_c = Spell_Checker()
-l_m = s_c.Language_Model(n = 3)
+l_m = s_c.Language_Model(n = 3, chars=chars)
 s_c.add_language_model(l_m)
 from spelling_confusion_matrices import error_tables
 s_c.add_error_tables(error_tables)
@@ -478,15 +483,19 @@ end = datetime.datetime.now()
 print(f'Building the model took:   {end - start}\n')
 print('-Wrong words sentences-')
 for sentence in sentences_wrong_words:
-    print(f'Wrong sentence: {sentence}\nCorrection: {s_c.spell_check(sentence,alpha)}\n')
+    start = datetime.datetime.now()
+    print(f'Wrong sentence: {sentence}\nCorrection: {s_c.spell_check(sentence,alpha)}')
+    print(f'Correction time: {datetime.datetime.now() - start}\n')
 print('-Real words sentences-')
 for sentence in sentences_real_words:
-    print(f'Wrong sentence: {sentence}\nCorrection: {s_c.spell_check(sentence,alpha)}\n')
+    start = datetime.datetime.now()
+    print(f'Wrong sentence: {sentence}\nCorrection: {s_c.spell_check(sentence,alpha)}')
+    print(f'Correction time: {datetime.datetime.now() - start}\n')
 
 
 #--- corpus.data tests ---#
 s_c = Spell_Checker()
-l_m = s_c.Language_Model(n = 3)
+l_m = s_c.Language_Model(n = 3, chars = chars)
 s_c.add_language_model(l_m)
 from spelling_confusion_matrices import error_tables
 s_c.add_error_tables(error_tables)
@@ -504,10 +513,14 @@ end = datetime.datetime.now()
 print(f'Building the model took:   {end - start}\n')
 print('-Wrong words sentences-')
 for sentence in sentences_wrong_words:
-    print(f'Wrong sentence: {sentence}\nCorrection: {s_c.spell_check(sentence,alpha)}\n')
+    start = datetime.datetime.now()
+    print(f'Wrong sentence: {sentence}\nCorrection: {s_c.spell_check(sentence,alpha)}')
+    print(f'Correction time: {datetime.datetime.now() - start}\n')
 print('-Real words sentences-')
 for sentence in sentences_real_words:
-    print(f'Wrong sentence: {sentence}\nCorrection: {s_c.spell_check(sentence,alpha)}\n')
+    start = datetime.datetime.now()
+    print(f'Wrong sentence: {sentence}\nCorrection: {s_c.spell_check(sentence,alpha)}')
+    print(f'Correction time: {datetime.datetime.now() - start}\n')
 
 
 
