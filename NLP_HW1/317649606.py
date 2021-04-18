@@ -21,22 +21,28 @@ class Spell_Checker:
 
     def spell_check(self, text, alpha):
         # Should input text be normalized in the method or given normalized? !!!
-        str_parts = text.split()
+        # Should the sentence be returned with normalization? !!!
+        normalized_text = normalize_text(text)
+        str_parts = normalized_text.split()
         wrong_word = self.check_if_has_wrong_word(str_parts)
         if wrong_word is not None:
             if len(str_parts) < self.lm.n:
                 fixed_word = self.simple_noisy_chanel(wrong_word)[0]
-                return ' '.join([part if part!= wrong_word else fixed_word for part in str_parts])
+                return self.get_fixed_original_sentence(text, wrong_word, fixed_word)
+                # return ' '.join([part if part != wrong_word else fixed_word for part in str_parts])
             else:
                 fixed_word = self.context_noisy_chanel(str_parts,wrong_word)[0]
-                return ' '.join([part if part != wrong_word else fixed_word for part in str_parts])
+                return self.get_fixed_original_sentence(text, wrong_word, fixed_word)
+                # return ' '.join([part if part != wrong_word else fixed_word for part in str_parts])
         else:
             if len(str_parts) < self.lm.n:
                 fixed_word, wrong_word = self.simple_real_words_noisy_chanel(str_parts, alpha)
-                return (' '.join(str_parts)).replace(wrong_word, fixed_word)
+                return self.get_fixed_original_sentence(text, wrong_word, fixed_word)
+                # return (' '.join(str_parts)).replace(wrong_word, fixed_word)
             else:
                 fixed_word, wrong_word = self.context_real_words_noisy_chanel(str_parts, alpha)
-                return (' '.join(str_parts)).replace(wrong_word, fixed_word)
+                return self.get_fixed_original_sentence(text, wrong_word, fixed_word)
+                # return (' '.join(str_parts)).replace(wrong_word, fixed_word)
 
     def evaluate(self, text):
         return self.lm.evaluate(text)
@@ -123,7 +129,7 @@ class Spell_Checker:
             if R:
                 for c in letters:
                     if c == R[0]: continue
-                    substitution.append((L + c + R[1:], c + R[0]))
+                    substitution.append((L + c + R[1:], R[0]+c))
         return substitution
     # endregion
 
@@ -195,7 +201,7 @@ class Spell_Checker:
         for word in str_parts:
             best_simple_candidate_word = self.simple_noisy_chanel(word)
             prior_probability = self.calculate_prior_prob(word)
-            if alpha * prior_probability > (1 - alpha) * best_simple_candidate_word[1]:
+            if alpha * prior_probability > best_simple_candidate_word[1]:
                 candidates_for_real_mistake[(word, prior_probability)] = word
             else:
                 candidates_for_real_mistake[best_simple_candidate_word] = word
@@ -296,6 +302,50 @@ class Spell_Checker:
 
     def remove_original_word(self, lst, original_word):
         return [tpl for tpl in lst if tpl[0] != original_word]
+
+    def get_fixed_original_sentence(self, original_text_wrong, wrong_word, fixed_word):
+        set_punctuations = {char for char in '''!()-[]{};:'"\,<>./?@#$%^&*_~'''}
+
+        # No punctuations and no capital letters
+        num_of_punctuations = len([1 for char in original_text_wrong if char in set_punctuations])
+        num_of_capital_letters = len([1 for char in original_text_wrong if char.isupper()])
+        if num_of_punctuations == 0 and num_of_capital_letters == 0:
+            return ' '.join([part if part != wrong_word else fixed_word for part in original_text_wrong.split()])
+
+        # Has at least one punctuation or capital letter
+        new_str_parts = []
+        str_parts = original_text_wrong.split()
+        for part in str_parts:
+            if len(part) == 0: continue
+            normalized_part = normalize_text(part).replace(' ','')
+            if normalized_part != wrong_word:
+                new_str_parts.append(part)
+                continue
+            punctuation_indices = []
+            if part[0] in set_punctuations: punctuation_indices.append(0)
+            if part[-1] in set_punctuations: punctuation_indices.append(len(part) - 1)
+
+            if 0 in  punctuation_indices and len(part) == 1:continue # if only punctuation
+
+            has_capital_letter = False
+            if 0 in punctuation_indices: has_capital_letter = part[1].isupper()
+            else: has_capital_letter = part[0].isupper()
+
+
+            new_part = fixed_word
+
+            if has_capital_letter: new_part = new_part.capitalize()
+            for index in punctuation_indices:
+                if index == 0: new_part = part[index] + new_part
+                elif index == len(part) - 1: new_part = new_part + part[index]
+
+            new_str_parts.append(new_part)
+
+        return ' '.join(new_str_parts)
+
+
+
+
     # endregion
 
 
@@ -317,13 +367,14 @@ class Spell_Checker:
             self.WORDS = None
 
         def build_model(self, text):
+            normalized_text = normalize_text(text)
             if self.model_dict is None: self.model_dict = {}
             if not self.chars:
-                str_parts = text.split()
+                str_parts = normalized_text.split()
             else:
-                str_parts = [char for char in text] #Check for correctess !!!
+                str_parts = [char for char in normalized_text] #Check for correctess !!!
 
-            self.WORDS = self.build_word_vocabulary(str_parts) if not self.chars else self.build_word_vocabulary(text.split())
+            self.WORDS = self.build_word_vocabulary(str_parts) if not self.chars else self.build_word_vocabulary(normalized_text.split())
 
             dict_lst = [self.model_dict, self.model_trimmed_dict]
             bound_lst = [len(str_parts) - self.n + 1, len(str_parts) - self.n + 2]
@@ -451,76 +502,82 @@ def who_am_i():
 
 #---------------------------- Tests ----------------------------#
 alpha = 0.95
-sentences_wrong_words = ['he got a pretty good karacter',
-                         'i acress the room',
-                         'the famous acress',
-                         'acress put the apple on the table',
-                         'i eat appple every day',
-                         'todat i went to school']
+sentences_wrong_words = [
+    ("we also enjoyed the popular acress", "we also enjoyed the popular actress"),
+    ("Swim acress the pool", "Swim across the pool"),
 
-sentences_real_words = ['two of they kind',
-                        'two of threw apples']
+    ("chronic inflammation are caused by infection with a specific organism, all having the common karacter","chronic inflammation are caused by infection with a specific organism, all having the common character"),
+
+    ("two of thew apples", "two of the apples"),
+
+    ("The Vegetarian Restaurant serves good fod", "The Vegetarian Restaurant serves good food"),
+    ("he Vegetarian Restaurant serves good food", "the Vegetarian Restaurant serves good food"),
+    ("The Vegetarian Restaurant serves god food", "The Vegetarian Restaurant serves good food"),
+
+    ("I could not eccept such conditions", "I could not accept such conditions"),
+    ("I like everything accept that", "I like everything except that"),
+    ("talk to no one eccept me", "talk to no one except me"),
+
+    ("The disappearance of the buffalo, the main fod supply of the wild Indians", "The disappearance of the buffalo, the main food supply of the wild Indians"),
+
+    ("abondon","abandon"),
+    ("abotu","about"),
+    ("leutenant","lieutenant"),
+    ("recident","resident"),
+    ("same mischievious","same mischievous"),
+    ("wroet","wrote")
+ ]
 
 
+def correcting_senteces(sc):
+    num_of_good_corrections = 0
+    for wrong_correct_tpl in sentences_wrong_words:
+        wrong, correct = wrong_correct_tpl
+        start = datetime.datetime.now()
+        print(f'Wrong sentence: {wrong}')
+        correction = sc.spell_check(wrong, alpha)
+        print(f'Correction: {correction}')
+        if correction == correct:
+            print('Good')
+            num_of_good_corrections += 1
+        else:
+            print('Bad')
+        print(f'Correction time: {datetime.datetime.now() - start}\n')
+    print(f'\nNum of good corrections is {num_of_good_corrections} out of {len(sentences_wrong_words)}')
 
-#--- big.txt tests ---#
+
 chars = False
-s_c = Spell_Checker()
-l_m = s_c.Language_Model(n = 3, chars=chars)
-s_c.add_language_model(l_m)
-from spelling_confusion_matrices import error_tables
-s_c.add_error_tables(error_tables)
+n = 3
+print(f'\nN-gram is {n}\nChars is {chars}\n')
+#--- big.txt tests ---#
 
+sc = Spell_Checker()
+lm = sc.Language_Model(n = n, chars=chars)
+sc.add_language_model(lm)
+from spelling_confusion_matrices import error_tables
+sc.add_error_tables(error_tables)
 print('\n#--------------------- big.txt ---------------------#')
 big = open('big.txt', 'r').read()
 start = datetime.datetime.now()
-big_normlized = normalize_text(big)
-end = datetime.datetime.now()
-print(f'Normlization took:   {end - start}')
-start = datetime.datetime.now()
-l_m.build_model(big_normlized)
+lm.build_model(big)
 end = datetime.datetime.now()
 print(f'Building the model took:   {end - start}\n')
-print('-Wrong words sentences-')
-for sentence in sentences_wrong_words:
-    start = datetime.datetime.now()
-    print(f'Wrong sentence: {sentence}\nCorrection: {s_c.spell_check(sentence,alpha)}')
-    print(f'Correction time: {datetime.datetime.now() - start}\n')
-print('-Real words sentences-')
-for sentence in sentences_real_words:
-    start = datetime.datetime.now()
-    print(f'Wrong sentence: {sentence}\nCorrection: {s_c.spell_check(sentence,alpha)}')
-    print(f'Correction time: {datetime.datetime.now() - start}\n')
-
+correcting_senteces(sc)
 
 #--- corpus.data tests ---#
-s_c = Spell_Checker()
-l_m = s_c.Language_Model(n = 3, chars = chars)
-s_c.add_language_model(l_m)
+sc = Spell_Checker()
+lm = sc.Language_Model(n = n, chars = chars)
+sc.add_language_model(lm)
 from spelling_confusion_matrices import error_tables
-s_c.add_error_tables(error_tables)
+sc.add_error_tables(error_tables)
 
 print('\n#--------------------- corpus.data ---------------------#')
 corpus = open('corpus.data', 'r').read()
 corpus = ' '.join(corpus.split('<s>'))
-start = datetime.datetime.now()
-corpus_normlized = normalize_text(corpus)
-end = datetime.datetime.now()
-print(f'Normlization took:   {end - start}')
-start = datetime.datetime.now()
-l_m.build_model(corpus_normlized)
+lm.build_model(corpus)
 end = datetime.datetime.now()
 print(f'Building the model took:   {end - start}\n')
-print('-Wrong words sentences-')
-for sentence in sentences_wrong_words:
-    start = datetime.datetime.now()
-    print(f'Wrong sentence: {sentence}\nCorrection: {s_c.spell_check(sentence,alpha)}')
-    print(f'Correction time: {datetime.datetime.now() - start}\n')
-print('-Real words sentences-')
-for sentence in sentences_real_words:
-    start = datetime.datetime.now()
-    print(f'Wrong sentence: {sentence}\nCorrection: {s_c.spell_check(sentence,alpha)}')
-    print(f'Correction time: {datetime.datetime.now() - start}\n')
+correcting_senteces(sc)
 
 
 
