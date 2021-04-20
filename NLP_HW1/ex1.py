@@ -19,7 +19,7 @@ class Spell_Checker:
             lm: a language model object. Defaults to None
         """
         self.lm = lm
-        self.et = None
+        self.et = {}
         self.normalization_dict = {'deletion':{}, 'insertion':{}, 'substitution':{}, 'transposition':{}}
 
     def add_language_model(self, lm):
@@ -31,10 +31,6 @@ class Spell_Checker:
             lm: a Spell_Checker.Language_Model object
         """
         self.lm = lm
-
-    def build_model(self, text, n):
-        self.lm.n = n
-        self.lm.build_model(text = text)
 
 
     def add_error_tables(self, error_tables):
@@ -58,6 +54,7 @@ class Spell_Checker:
 
        Returns:
            Float. The float should reflect the (log) probability.
+           The base of the log operation is 10.
         """
         return self.lm.evaluate(text)
 
@@ -74,8 +71,6 @@ class Spell_Checker:
         Return:
             A modified string (or a copy of the original if no corrections are made.)
         """
-        # Should input text be normalized in the method or given normalized? !!!
-        # Should the sentence be returned with normalization? !!!
         normalized_text = normalize_text(text)
         str_parts = normalized_text.split()
         wrong_word = self.check_if_has_wrong_word(str_parts)
@@ -84,23 +79,19 @@ class Spell_Checker:
                 fixed_word = self.simple_noisy_chanel(wrong_word)[0]
                 fixed_word = str(fixed_word)
                 return self.get_fixed_original_sentence(text, wrong_word, fixed_word)
-                # return ' '.join([part if part != wrong_word else fixed_word for part in str_parts])
             else:
                 fixed_word = self.context_noisy_chanel(str_parts,wrong_word)[0]
                 fixed_word = str(fixed_word)
                 return self.get_fixed_original_sentence(text, wrong_word, fixed_word)
-                # return ' '.join([part if part != wrong_word else fixed_word for part in str_parts])
         else:
             if len(str_parts) < self.lm.n:
                 fixed_word, wrong_word = self.simple_real_words_noisy_chanel(str_parts, alpha)
                 fixed_word, wrong_word = str(fixed_word), str(wrong_word)
                 return self.get_fixed_original_sentence(text, wrong_word, fixed_word)
-                # return (' '.join(str_parts)).replace(wrong_word, fixed_word)
             else:
                 fixed_word, wrong_word = self.context_real_words_noisy_chanel(str_parts, alpha)
                 fixed_word, wrong_word = str(fixed_word), str(wrong_word)
                 return self.get_fixed_original_sentence(text, wrong_word, fixed_word)
-                # return (' '.join(str_parts)).replace(wrong_word, fixed_word)
 
 
 
@@ -367,6 +358,10 @@ class Spell_Checker:
             else:
                 candidates_for_real_mistake[best_simple_candidate_word] = word
 
+        temp_candidate_dict = {tpl: original_word for tpl, original_word in candidates_for_real_mistake.items() if tpl[0] != original_word}
+        if len(temp_candidate_dict) != 0:
+            candidates_for_real_mistake = temp_candidate_dict
+
         max_prob_tpl = self.get_tuple_with_max_values(list(candidates_for_real_mistake.keys()))
         return max_prob_tpl[0], candidates_for_real_mistake[max_prob_tpl]
 
@@ -604,11 +599,11 @@ class Spell_Checker:
                 text (str): the text to construct the model from.
             """
             normalized_text = normalize_text(text)
-            if self.model_dict is None: self.model_dict = {}
+            self.model_dict = {}
             if not self.chars:
                 str_parts = normalized_text.split()
             else:
-                str_parts = [char for char in normalized_text] #Check for correctess !!!
+                str_parts = [char for char in normalized_text]
 
             self.WORDS = self.build_word_vocabulary(str_parts) if not self.chars else self.build_word_vocabulary(normalized_text.split())
 
@@ -667,7 +662,7 @@ class Spell_Checker:
                 # context = self.choose_sample('uniform')
 
                 # if sampling is by choise
-                context = self.choose_sample('choise') # Check for right sampling !!!
+                context = self.choose_sample('choise')
 
             if not self.chars:
                 generated_text = context.split()
@@ -678,7 +673,7 @@ class Spell_Checker:
                 last_context = generated_text[-(self.n-1):]
                 try:
                     last_context_list = self.model_context_dict[' '.join(last_context)]
-                    random_number = random.randint(0, len(last_context_list)-1) # Check for right sampling !!!
+                    random_number = random.randint(0, len(last_context_list)-1)
                     generated_text.append(last_context_list[random_number])
                 except KeyError: break # Stops when context in not in the text
             return ' '.join(generated_text)
@@ -693,6 +688,7 @@ class Spell_Checker:
 
             Returns:
                 Float. The float should reflect the (log) probability.
+                The base of the log operation is 10.
             """
             if not self.chars:
                 str_parts = text.split()
@@ -768,14 +764,28 @@ class Spell_Checker:
 
 # region Normalization and WhoAmI methods
 
-# Transform the text to lowercase
-# Removes punctuation
-# Handles cases like "famous,actress" and separates them to two tokens
 def normalize_text(text):
     """
+    First part of normalization: transform the text to lowercase
+    Reason behind: to keep the uniformity between all words and sentences, because uppercase words doesn't have
+                    much effect on the context of the sentence.
+
+    Second part of normalization: remove punctuation
+    Reason behind: remove unnecessary tokens that do not effect on the correction of the sentence
+
+    Third part of normalization: tokenizing
+    Reason behind: to separate sentences by whitespace and transform each word into a token that I can work with
+
+    Fourth part of normalization: handle cases like "famous,actress" when no white space separate between two words
+    Reason behind: to separate the sentence to number of tokens and not work with bad and useless tokens
+
+    Note: I did not do stemming and lemmatization because I think the suffix of the word effects the right
+            correction of the sentence
+
+
     Returns a normalized version of the specified string.
-      You can add default parameters as you like (they should have default values!)
-      You should explain your decisions in the header of the function.
+    You can add default parameters as you like (they should have default values!)
+    You should explain your decisions in the header of the function.
 
     Args:
         text (str): the text to normalize
@@ -839,8 +849,6 @@ sentences_wrong_words = [
     ("same mischievious","same mischievous"),
     ("wroet","wrote")
  ]
-
-
 
 def correcting_senteces(sc):
     num_of_good_corrections = 0
