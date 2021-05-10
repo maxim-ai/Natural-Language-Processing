@@ -8,63 +8,149 @@ from nltk.corpus import stopwords
 from sklearn.pipeline import make_pipeline
 from sklearn.preprocessing import StandardScaler
 from sklearn.svm import SVC
+from sklearn.model_selection import train_test_split
+from sklearn.model_selection import cross_val_score
+from gensim import corpora
 
+import torch.nn as nn
+import torch.nn.functional as F
+import torch.optim as optim
+import torch
+
+from sklearn.metrics import classification_report
 
 
 def main():
-    start = datetime.now()
+
     tweets_df_train=read_tsv('trump_train.tsv',['tweet_id','user_handle','tweet_text','time_stamp','device'])
-    tweets_df_test = read_tsv('trump_test.tsv',['user_handle','tweet_text','time_stamp'])
     vectorizer = CountVectorizer(stop_words= 'english',lowercase=True)
 
+    tweets_class_dict = separte_tweets(tweets_df_train)
 
-    tweets_class_dict_train = separte_tweets(tweets_df_train)
-    train_X = vectorizer.fit_transform(list(tweets_class_dict_train.keys())).toarray()
-    train_Y = list(tweets_class_dict_train.values())
+    train_X_splitted, test_X_splitted, train_Y_splitted, test_Y_splitted = split_train_test(tweets_class_dict)
 
-    tweets_class_dict_test = separte_tweets(tweets_df_test)
-    test_X = vectorizer.transform(list(tweets_class_dict_test.keys())).toarray()
-    test_Y = list(tweets_class_dict_test.values())
+    train_X = vectorizer.fit_transform(train_X_splitted).toarray()
+    train_Y = train_Y_splitted
 
-    print('\n--- Logistic regression model ---')
-    LogReg_model = LogisticRegression()
-    LogReg_model.fit(train_X, train_Y)
-    predictions = LogReg_model.predict(test_X)
-    print(f'\n{predictions}')
-    print(f'\nAccuracy: {accuracy_score(test_Y, predictions)}')
-    print(f'Time took: {datetime.now()-start}')
+    test_X = vectorizer.transform(test_X_splitted).toarray()
+    test_Y = test_Y_splitted
+
+
+    # start = datetime.now()
+    # print('\n------------------------------ Logistic regression model ------------------------------')
+    # LogReg_model = LogisticRegression()
+    # LogReg_model.fit(train_X, train_Y)
+    # predictions = LogReg_model.predict(test_X)
+    # print(f'\n{predictions}')
+    # print(f'\nAccuracy: {accuracy_score(test_Y, predictions)}')
+    # print(f'Time took: {datetime.now()-start}')
+    # start = datetime.now()
+    # cv_scores = use_cross_validation(tweets_class_dict, LogReg_model, 5,vectorizer)
+    # print(f'\nAccuracy Cross-validation: {np.average(cv_scores)}')
+    # print(f'Time took: {datetime.now()-start}')
+
+    # start = datetime.now()
+    # print('\n\n\n------------------------------ SVC linear model ------------------------------')
+    # SVClin_model = make_pipeline(StandardScaler(), SVC(gamma='auto', kernel = 'linear'))
+    # SVClin_model.fit(train_X, train_Y)
+    # predictions = SVClin_model.predict(test_X)
+    # print(f'\n{predictions}')
+    # print(f'\nAccuracy: {accuracy_score(test_Y, predictions)}')
+    # print(f'Time took: {datetime.now() - start}')
+    # start = datetime.now()
+    # cv_scores = use_cross_validation(tweets_class_dict, SVClin_model, 5, vectorizer)
+    # print(f'\nAccuracy Cross-validation: {np.average(cv_scores)}')
+    # print(f'Time took: {datetime.now() - start}')
+
+    # start = datetime.now()
+    # print('\n\n\n------------------------------ SVC non_linear model ------------------------------')
+    # SVCnonlin_model = make_pipeline(StandardScaler(), SVC(gamma='auto', kernel='sigmoid'))
+    # SVCnonlin_model.fit(train_X, train_Y)
+    # predictions = SVCnonlin_model.predict(test_X)
+    # print(f'\n{predictions}')
+    # print(f'\nAccuracy: {accuracy_score(test_Y, predictions)}')
+    # print(f'Time took: {datetime.now() - start}')
+    # start = datetime.now()
+    # cv_scores = use_cross_validation(tweets_class_dict, SVCnonlin_model, 5, vectorizer)
+    # print(f'\nAccuracy Cross-validation: {np.average(cv_scores)}')
+    # print(f'Time took: {datetime.now() - start}')
+
 
     start = datetime.now()
-    print('\n\n--- SVC model ---')
-    clf = make_pipeline(StandardScaler(), SVC(gamma='auto'))
-    clf.fit(train_X, train_Y)
-    predictions = clf.predict(test_X)
-    print(f'\n{predictions}')
-    print(f'\nAccuracy: {accuracy_score(test_Y, predictions)}')
-    print(f'Time took: {datetime.now() - start}')
+    print('\n\n\n------------------------------ FFNN model ------------------------------')
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    tweet_dict = make_dict([[token for token in tweet.split()] for tweet,classification in tweets_class_dict.items()], False)
+
+    input_dim = len(tweet_dict)
+    hidden_dim = 500
+    output_dim = 3
+    num_epochs = 20
+
+    ff_nn_bow_model = FeedforwardNeuralNetModel(input_dim, hidden_dim, output_dim)
+    ff_nn_bow_model.to(device)
+
+    loss_function = nn.CrossEntropyLoss()
+    optimizer = optim.SGD(ff_nn_bow_model.parameters(), lr=0.001)
+
+    for epoch in range(num_epochs):
+        # if (epoch + 1) % 25 == 0:
+        #     print("Epoch completed: " + str(epoch + 1))
+        for index, tweet in enumerate(train_X_splitted):
+            optimizer.zero_grad()
+            bow_vec = make_bow_vector(tweet_dict, tweet.split(), device)
+            probs = ff_nn_bow_model(bow_vec)
+            target = make_target(train_Y_splitted[index], device)
+            loss = loss_function(probs, target)
+            loss.backward()
+            optimizer.step()
+        print(f'{epoch + 1} completed')
+
+    bow_ff_nn_predictions = []
+    original_lables_ff_bow = []
+    with torch.no_grad():
+        for index, tweet in enumerate(test_X_splitted):
+            bow_vec = make_bow_vector(tweet_dict, tweet.split(), device)
+            probs = ff_nn_bow_model(bow_vec)
+            bow_ff_nn_predictions.append(torch.argmax(probs, dim=1).cpu().numpy()[0])
+            original_lables_ff_bow.append(make_target(test_Y_splitted[index], device).cpu().numpy()[0])
+
+    print(classification_report(original_lables_ff_bow,bow_ff_nn_predictions))
+    print(f'\nTime took: {datetime.now() - start}')
 
 def separte_tweets(tweets_df):
-    tweet_class_dict = {}
     stop_words = set(stopwords.words('english'))
+    tweet_class_dict = {}
     for index, row in tweets_df.iterrows():
+        pp_tweet = preprocess(row['tweet_text'], stop_words)
         if row['user_handle'] == 'realDonaldTrump':
-            tweet_class_dict[preprocess(row['tweet_text'], stop_words)] = 0
-            continue
-        if row['user_handle'] == 'PressSec':
-            tweet_class_dict[preprocess(row['tweet_text'], stop_words)] = 1
-            continue
-        if row['user_handle'] == 'POTUS':
-            time_tweeted = datetime.strptime(row['time_stamp'], '%Y-%m-%d %H:%M:%S').date()
+            device, tweet_date = row['device'], get_date(row['time_stamp'])
+            change_device_date = get_date('2017-04-01')
+            if device == 'android':
+                if tweet_date < change_device_date:
+                    tweet_class_dict[pp_tweet] = 0
+                else:
+                    tweet_class_dict[preprocess(row['tweet_text'],stop_words)] = 1
+            elif device == 'iphone':
+                if tweet_date > change_device_date:
+                    tweet_class_dict[pp_tweet] = 0
+                else:
+                    tweet_class_dict[pp_tweet] = 1
+            else:
+                tweet_class_dict[pp_tweet] = 1
+        elif row['user_handle'] == 'PressSec':
+            tweet_class_dict[pp_tweet] = 1
+        elif row['user_handle'] == 'POTUS':
+            time_tweeted = get_date(row['time_stamp'])
             trump_start, trump_end = [get_date(d) for d in ['2017-01-20','2021-01-20']]
-            if trump_start <= time_tweeted <= trump_end: tweet_class_dict[preprocess(row['tweet_text'], stop_words)] = 0
-            else: tweet_class_dict[preprocess(row['tweet_text'], stop_words)] = 1
-            continue
-        # Should consider to use the device
-
+            if trump_start <= time_tweeted <= trump_end: tweet_class_dict[pp_tweet] = 0
+            else: tweet_class_dict[pp_tweet] = 1
     return tweet_class_dict
 
 def get_date(d):
-    return datetime.strptime(d, '%Y-%m-%d').date()
+    if ':' in d:
+        return datetime.strptime(d, '%Y-%m-%d %H:%M:%S').date()
+    else:
+        return datetime.strptime(d, '%Y-%m-%d').date()
 
 def read_tsv(file_name, headers):
     import csv
@@ -102,6 +188,70 @@ def preprocess(text, stop_words):
     normalized_text = ' '.join([part for part in normalized_text.split() if part not in stop_words])
 
     return normalized_text
+
+def split_train_test(XY_dct):
+    return train_test_split(list(XY_dct.keys()), list(XY_dct.values()), test_size=0.2 ,shuffle=True)
+
+def use_cross_validation(tweets_class_dict, model, folds,vectorizer):
+    return cross_val_score(model, vectorizer.fit_transform(list(tweets_class_dict.keys())).toarray(),
+                    [str(value) for value in tweets_class_dict.values()],
+                    cv=folds)
+
+def make_dict(token_list, padding=True):
+    if padding:
+        tweet_dict = corpora.Dictionary([['pad']])
+        tweet_dict.add_documents(token_list)
+    else:
+        tweet_dict = corpora.Dictionary(token_list)
+    return tweet_dict
+
+def make_bow_vector(tweet_dict, sentence, device):
+    vec = torch.zeros(len(tweet_dict), dtype=torch.float64, device=device)
+    for word in sentence:
+        vec[tweet_dict.token2id[word]] += 1
+    return vec.view(1, -1).float()
+
+def make_target(label, device):
+    if label == 0:
+        return torch.tensor([0], dtype=torch.long, device=device)
+    elif label == 1:
+        return torch.tensor([1], dtype=torch.long, device=device)
+
+
+class FeedforwardNeuralNetModel(nn.Module):
+    def __init__(self, input_dim, hidden_dim, output_dim):
+        super(FeedforwardNeuralNetModel, self).__init__()
+
+        # Linear function 1: vocab_size --> 500
+        self.fc1 = nn.Linear(input_dim, hidden_dim)
+        # Non-linearity 1
+        self.relu1 = nn.ReLU()
+
+        # # Linear function 2: 500 --> 500
+        # self.fc2 = nn.Linear(hidden_dim, hidden_dim)
+        # # Non-linearity 2
+        # self.relu2 = nn.ReLU()
+
+        # Linear function 2 (readout): 500 --> 3
+        self.fc2 = nn.Linear(hidden_dim, output_dim)
+
+    def forward(self, x):
+        # Linear function 1
+        out = self.fc1(x)
+        # Non-linearity 1
+        out = self.relu1(out)
+
+        # # Linear function 2
+        # out = self.fc2(out)
+        # # Non-linearity 2
+        # out = self.relu2(out)
+
+        # Linear function 3 (readout)
+        out = self.fc2(out)
+
+        return F.softmax(out, dim=1)
+
+
 
 if __name__ == '__main__':
     main()
