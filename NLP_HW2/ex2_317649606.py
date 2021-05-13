@@ -1,3 +1,4 @@
+import csv
 from sklearn.feature_extraction.text import CountVectorizer
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import accuracy_score
@@ -25,9 +26,9 @@ def main():
     tweets_df_train=read_tsv('trump_train.tsv',['tweet_id','user_handle','tweet_text','time_stamp','device'])
     vectorizer = CountVectorizer(stop_words= 'english',lowercase=True)
 
-    tweets_class_dict = separte_tweets(tweets_df_train)
+    tweets_class_list = separte_tweets(tweets_df_train)
 
-    train_X_splitted, test_X_splitted, train_Y_splitted, test_Y_splitted = split_train_test(tweets_class_dict)
+    train_X_splitted, test_X_splitted, train_Y_splitted, test_Y_splitted = split_train_test(tweets_class_list)
 
     train_X = vectorizer.fit_transform(train_X_splitted).toarray()
     train_Y = train_Y_splitted
@@ -45,9 +46,11 @@ def main():
     print(f'\nAccuracy: {accuracy_score(test_Y, predictions)}')
     print(f'Time took: {datetime.now()-start}')
     start = datetime.now()
-    cv_scores = use_cross_validation(tweets_class_dict, LogReg_model, 5,vectorizer)
+    cv_scores = use_cross_validation(tweets_class_list, LogReg_model, 5,vectorizer)
     print(f'\nAccuracy Cross-validation: {np.average(cv_scores)}')
     print(f'Time took: {datetime.now()-start}')
+
+
 
     # start = datetime.now()
     # print('\n\n\n------------------------------ SVC linear model ------------------------------')
@@ -79,7 +82,8 @@ def main():
     start = datetime.now()
     print('\n\n\n------------------------------ FFNN model ------------------------------')
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    tweet_dict = make_dict([[token for token in tweet.split()] for tweet,classification in tweets_class_dict.items()], False)
+    # tweet_dict = make_dict([[token for token in tweet.split()] for tweet,classification in tweets_class_dict.items()], False)
+    tweet_dict = make_dict([[token for token in tpl[0].split()] for tpl in tweets_class_list], False)
 
     input_dim = len(tweet_dict)
     hidden_dim = 500
@@ -93,8 +97,6 @@ def main():
     optimizer = optim.SGD(ff_nn_bow_model.parameters(), lr=0.001)
 
     for epoch in range(num_epochs):
-        # if (epoch + 1) % 25 == 0:
-        #     print("Epoch completed: " + str(epoch + 1))
         for index, tweet in enumerate(train_X_splitted):
             optimizer.zero_grad()
             bow_vec = make_bow_vector(tweet_dict, tweet.split(), device)
@@ -121,7 +123,8 @@ def main():
 
 def separte_tweets(tweets_df):
     stop_words = set(stopwords.words('english'))
-    tweet_class_dict = {}
+    # tweet_class_dict = {}
+    tweet_class_list = []
     for index, row in tweets_df.iterrows():
         pp_tweet = preprocess(row['tweet_text'], stop_words)
         if row['user_handle'] == 'realDonaldTrump':
@@ -129,24 +132,34 @@ def separte_tweets(tweets_df):
             change_device_date = get_date('2017-04-01')
             if device == 'android':
                 if tweet_date < change_device_date:
-                    tweet_class_dict[pp_tweet] = 0
+                    tweet_class_list.append((pp_tweet, 0))
+                    # tweet_class_dict[pp_tweet] = 0
                 else:
-                    tweet_class_dict[preprocess(row['tweet_text'],stop_words)] = 1
+                    tweet_class_list.append((pp_tweet, 1))
+                    # tweet_class_dict[preprocess(row['tweet_text'],stop_words)] = 1
             elif device == 'iphone':
                 if tweet_date > change_device_date:
-                    tweet_class_dict[pp_tweet] = 0
+                    tweet_class_list.append((pp_tweet, 0))
+                    # tweet_class_dict[pp_tweet] = 0
                 else:
-                    tweet_class_dict[pp_tweet] = 1
+                    tweet_class_list.append((pp_tweet, 1))
+                    # tweet_class_dict[pp_tweet] = 1
             else:
-                tweet_class_dict[pp_tweet] = 1
+                tweet_class_list.append((pp_tweet, 1))
+                # tweet_class_dict[pp_tweet] = 1
         elif row['user_handle'] == 'PressSec':
-            tweet_class_dict[pp_tweet] = 1
+            tweet_class_list.append((pp_tweet, 1))
+            # tweet_class_dict[pp_tweet] = 1
         elif row['user_handle'] == 'POTUS':
             time_tweeted = get_date(row['time_stamp'])
             trump_start, trump_end = [get_date(d) for d in ['2017-01-20','2021-01-20']]
-            if trump_start <= time_tweeted <= trump_end: tweet_class_dict[pp_tweet] = 0
-            else: tweet_class_dict[pp_tweet] = 1
-    return tweet_class_dict
+            if trump_start <= time_tweeted <= trump_end:
+                tweet_class_list.append((pp_tweet, 0))
+                # tweet_class_dict[pp_tweet] = 0
+            else:
+                tweet_class_list.append((pp_tweet, 1))
+                # tweet_class_dict[pp_tweet] = 1
+    return tweet_class_list
 
 def get_date(d):
     if ':' in d:
@@ -155,7 +168,6 @@ def get_date(d):
         return datetime.strptime(d, '%Y-%m-%d').date()
 
 def read_tsv(file_name, headers):
-    import csv
     tsvfile = open(file_name,'r')
     tsvreader = csv.reader(tsvfile, delimiter = '\n')
     tweet_list = [line[0] for line in tsvreader]
@@ -191,12 +203,12 @@ def preprocess(text, stop_words):
 
     return normalized_text
 
-def split_train_test(XY_dct):
-    return train_test_split(list(XY_dct.keys()), list(XY_dct.values()), test_size=0.2 ,shuffle=True)
+def split_train_test(XY_list):
+    return train_test_split([tpl[0] for tpl in XY_list], [tpl[1] for tpl in XY_list], test_size=0.2 ,shuffle=True)
 
-def use_cross_validation(tweets_class_dict, model, folds,vectorizer):
-    return cross_val_score(model, vectorizer.fit_transform(list(tweets_class_dict.keys())).toarray(),
-                    [str(value) for value in tweets_class_dict.values()],
+def use_cross_validation(tweet_class_list, model, folds,vectorizer):
+    return cross_val_score(model, vectorizer.fit_transform([tpl[0] for tpl in tweet_class_list]).toarray(),
+                    [str(value) for value in [tpl[1] for tpl in tweet_class_list]],
                     cv=folds)
 
 def make_dict(token_list, padding=True):
