@@ -36,18 +36,18 @@ def main():
     test_Y = test_Y_splitted
 
 
-    # start = datetime.now()
-    # print('\n------------------------------ Logistic regression model ------------------------------')
-    # LogReg_model = LogisticRegression()
-    # LogReg_model.fit(train_X, train_Y)
-    # predictions = LogReg_model.predict(test_X)
-    # print(f'\n{predictions}')
-    # print(f'\nAccuracy: {accuracy_score(test_Y, predictions)}')
-    # print(f'Time took: {datetime.now()-start}')
-    # start = datetime.now()
-    # cv_scores = use_cross_validation(tweets_class_dict, LogReg_model, 5,vectorizer)
-    # print(f'\nAccuracy Cross-validation: {np.average(cv_scores)}')
-    # print(f'Time took: {datetime.now()-start}')
+    start = datetime.now()
+    print('\n------------------------------ Logistic regression model ------------------------------')
+    LogReg_model = LogisticRegression()
+    LogReg_model.fit(train_X, train_Y)
+    predictions = LogReg_model.predict(test_X)
+    print(f'\n{predictions}')
+    print(f'\nAccuracy: {accuracy_score(test_Y, predictions)}')
+    print(f'Time took: {datetime.now()-start}')
+    start = datetime.now()
+    cv_scores = use_cross_validation(tweets_class_dict, LogReg_model, 5,vectorizer)
+    print(f'\nAccuracy Cross-validation: {np.average(cv_scores)}')
+    print(f'Time took: {datetime.now()-start}')
 
     # start = datetime.now()
     # print('\n\n\n------------------------------ SVC linear model ------------------------------')
@@ -83,7 +83,7 @@ def main():
 
     input_dim = len(tweet_dict)
     hidden_dim = 500
-    output_dim = 3
+    output_dim = 2
     num_epochs = 20
 
     ff_nn_bow_model = FeedforwardNeuralNetModel(input_dim, hidden_dim, output_dim)
@@ -103,7 +103,7 @@ def main():
             loss = loss_function(probs, target)
             loss.backward()
             optimizer.step()
-        print(f'{epoch + 1} completed')
+        print(f'{epoch + 1} epoch completed')
 
     bow_ff_nn_predictions = []
     original_lables_ff_bow = []
@@ -115,7 +115,9 @@ def main():
             original_lables_ff_bow.append(make_target(test_Y_splitted[index], device).cpu().numpy()[0])
 
     print(classification_report(original_lables_ff_bow,bow_ff_nn_predictions))
-    print(f'\nTime took: {datetime.now() - start}')
+    print(f'\n\nAccuracy: {accuracy_score(original_lables_ff_bow,bow_ff_nn_predictions)}')
+    print(f'Time took: {datetime.now() - start}')
+
 
 def separte_tweets(tweets_df):
     stop_words = set(stopwords.words('english'))
