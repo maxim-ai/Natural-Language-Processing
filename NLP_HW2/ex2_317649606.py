@@ -82,7 +82,6 @@ def main():
     start = datetime.now()
     print('\n\n\n------------------------------ FFNN model ------------------------------')
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    # tweet_dict = make_dict([[token for token in tweet.split()] for tweet,classification in tweets_class_dict.items()], False)
     tweet_dict = make_dict([[token for token in tpl[0].split()] for tpl in tweets_class_list], False)
 
     input_dim = len(tweet_dict)
