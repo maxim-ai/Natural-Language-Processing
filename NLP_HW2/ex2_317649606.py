@@ -1,4 +1,6 @@
 import csv
+import os
+import pickle
 from sklearn.feature_extraction.text import CountVectorizer
 from sklearn.linear_model import LogisticRegression
 from sklearn.naive_bayes import MultinomialNB
@@ -24,145 +26,255 @@ from sklearn.metrics import classification_report
 
 def main():
 
-    tweets_df_train=read_tsv('trump_train.tsv',['tweet_id','user_handle','tweet_text','time_stamp','device'])
-
-    tweet_class_list = separte_tweets(tweets_df_train) #Tuple: (pp tweet, class, org tweet)
-
-    #For training
-    train_X_splitted, test_X_splitted, train_Y_splitted, test_Y_splitted = split_train_test(tweet_class_list)
+    """
+    The main method used for tests
+    """
 
 
-    #For testing
-    # train_X_splitted = [(tpl[0],tpl[2]) for tpl in tweet_class_list]
-    # test_X_splitted = get_test_data()
-    # train_Y_splitted = [tpl[1] for tpl in tweet_class_list]
-    # test_Y_splitted = []
+    # # region Submission
+    model_file = open('model','wb')
+    pickle.dump(train_best_model(), model_file)
+    model_file.close()
+
+    best_model = load_best_model()
+
+    predictions = predict(best_model, 'trump_test.tsv')
+    write_test_predictions(predictions)
+    # # endregion
 
 
-    original_train_tweets = [tpl[1] for tpl in train_X_splitted]
-    original_test_tweets = [tpl[1] for tpl in test_X_splitted]
-    tweets_class_list = [(tpl[0], tpl[1]) for tpl in tweet_class_list]
-    train_X_splitted = [tpl[0] for tpl in train_X_splitted]
-    test_X_splitted = [tpl[0] for tpl in test_X_splitted]
-
-
-
-
-
-
-    # Without vectorizer !!!
-    # vocabulary = set(token for tweet in train_X_splitted for token in tweet.split())
-    # train_X = my_fit_transform(train_X_splitted, vocabulary)
+    # # region My tests
+    #
+    # tweets_df_train=read_tsv('trump_train.tsv',['tweet_id','user_handle','tweet_text','time_stamp','device'])
+    #
+    # tweet_class_list = separte_tweets(tweets_df_train) #Tuple: (pp tweet, class, org tweet)
+    #
+    # # For training
+    # train_X_splitted, test_X_splitted, train_Y_splitted, test_Y_splitted = split_train_test(tweet_class_list)
+    #
+    #
+    # original_train_tweets = [tpl[1] for tpl in train_X_splitted]
+    # original_test_tweets = [tpl[1] for tpl in test_X_splitted]
+    # tweet_class_list = [(tpl[0], tpl[1]) for tpl in tweet_class_list]
+    # train_X_splitted = [tpl[0] for tpl in train_X_splitted]
+    # test_X_splitted = [tpl[0] for tpl in test_X_splitted]
+    #
+    #
+    # vectorizer = CountVectorizer(stop_words='english', lowercase=True)
+    # train_X = form_features(vectorizer.fit_transform(train_X_splitted).toarray(), original_train_tweets)
     # train_Y = train_Y_splitted
-    # test_X = my_transform(test_X_splitted, vocabulary)
+    # test_X = form_features(vectorizer.transform(test_X_splitted).toarray(), original_test_tweets)
     # test_Y = test_Y_splitted
-
-
-    vectorizer = CountVectorizer(stop_words='english', lowercase=True)
-
-    train_X = form_features(vectorizer.fit_transform(train_X_splitted).toarray(), original_train_tweets)
-    train_Y = train_Y_splitted
-    test_X = form_features(vectorizer.transform(test_X_splitted).toarray(), original_test_tweets)
-    test_Y = test_Y_splitted
-
-
-
+    #
+    #
     # start = datetime.now()
     # print('\n------------------------------ Logistic regression model ------------------------------')
-    # LogReg_model = LogisticRegression(max_iter=400, multi_class='ovr')
-    # LogReg_model.fit(train_X, train_Y)
+    # LogReg_model = train_LogReg_model(train_X, train_Y)
     # predictions = LogReg_model.predict(test_X)
-    # # write_test_predictions(predictions)
-    # print(f'\n{predictions}')
     # print(f'\nAccuracy: {accuracy_score(test_Y, predictions)}')
     # print(f'Time took: {datetime.now()-start}')
+    #
+    # # start = datetime.now()
+    # # print('\n\n\n------------------------------ SVC linear model ------------------------------')
+    # # SVMlin_model = train_SVM_model(train_X, train_Y, 'linear')
+    # # predictions = SVMlin_model.predict(test_X)
+    # # print(f'\nAccuracy: {accuracy_score(test_Y, predictions)}')
+    # # print(f'Time took: {datetime.now() - start}')
+    # #
+    # # start = datetime.now()
+    # # print('\n\n\n------------------------------ SVC non_linear model ------------------------------')
+    # # SVMnonlin_model = train_SVM_model(train_X, train_Y, 'non_linear')
+    # # predictions = SVMnonlin_model.predict(test_X)
+    # # print(f'\nAccuracy: {accuracy_score(test_Y, predictions)}')
+    # # print(f'Time took: {datetime.now() - start}')
+    #
     # start = datetime.now()
-    # cv_scores = use_cross_validation(tweets_class_list, LogReg_model, 5,vectorizer)
-    # print(f'\nAccuracy Cross-validation: {np.average(cv_scores)}')
-    # print(f'Time took: {datetime.now()-start}')
-
-
-
-    # start = datetime.now()
-    # print('\n\n\n------------------------------ SVC linear model ------------------------------')
-    # SVClin_model = make_pipeline(StandardScaler(), SVC(gamma='auto', kernel = 'linear'))
-    # SVClin_model.fit(train_X, train_Y)
-    # predictions = SVClin_model.predict(test_X)
-    # print(f'\n{predictions}')
+    # print('\n\n\n------------------------------ Naive bayes model ------------------------------')
+    # NaiveBayes_model = train_NaiveBayes_model(train_X, train_Y)
+    # predictions = NaiveBayes_model.predict(test_X)
     # print(f'\nAccuracy: {accuracy_score(test_Y, predictions)}')
     # print(f'Time took: {datetime.now() - start}')
-    # start = datetime.now()
-    # cv_scores = use_cross_validation(tweets_class_list, SVClin_model, 5, vectorizer)
-    # print(f'\nAccuracy Cross-validation: {np.average(cv_scores)}')
-    # print(f'Time took: {datetime.now() - start}')
-
-    # start = datetime.now()
-    # print('\n\n\n------------------------------ SVC non_linear model ------------------------------')
-    # SVCnonlin_model = make_pipeline(StandardScaler(), SVC(gamma='auto', kernel='sigmoid', C=10))
-    # SVCnonlin_model.fit(train_X, train_Y)
-    # predictions = SVCnonlin_model.predict(test_X)
-    # print(f'\n{predictions}')
-    # print(f'\nAccuracy: {accuracy_score(test_Y, predictions)}')
-    # print(f'Time took: {datetime.now() - start}')
-    # start = datetime.now()
-    # cv_scores = use_cross_validation(tweets_class_list, SVCnonlin_model, 5, vectorizer)
-    # print(f'\nAccuracy Cross-validation: {np.average(cv_scores)}')
-    # print(f'Time took: {datetime.now() - start}')
+    #
+    # # start = datetime.now()
+    # # print('\n\n\n------------------------------ FFNN model ------------------------------')
+    # #
+    # # ff_nn_bow_model, tweet_dict, device = train_FFNN_model(tweet_class_list, train_X_splitted, train_Y_splitted)
+    # #
+    # # original_lables_ff_bow, bow_ff_nn_predictions = predict_FFNN_model(ff_nn_bow_model,tweet_dict,
+    # #                                                                    test_X_splitted,test_Y_splitted,device)
+    # #
+    # # print(classification_report(original_lables_ff_bow,bow_ff_nn_predictions))
+    # # print(f'\n\nAccuracy: {accuracy_score(original_lables_ff_bow,bow_ff_nn_predictions)}')
+    # # print(f'Time took: {datetime.now() - start}')
+    # # endregion
 
 
-    # start = datetime.now()
-    # print('\n\n\n------------------------------ FFNN model ------------------------------')
-    # device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    # tweet_dict = make_dict([[token for token in tpl[0].split()] for tpl in tweets_class_list], False)
-    #
-    # input_dim = len(tweet_dict)
-    # hidden_dim = 500
-    # output_dim = 2
-    # num_epochs = 20
-    #
-    # ff_nn_bow_model = FeedforwardNeuralNetModel(input_dim, hidden_dim, output_dim)
-    # ff_nn_bow_model.to(device)
-    #
-    # loss_function = nn.CrossEntropyLoss()
-    # optimizer = optim.SGD(ff_nn_bow_model.parameters(), lr=0.001)
-    #
-    # for epoch in range(num_epochs):
-    #     for index, tweet in enumerate(train_X_splitted):
-    #         optimizer.zero_grad()
-    #         bow_vec = make_bow_vector(tweet_dict, tweet.split(), device)
-    #         probs = ff_nn_bow_model(bow_vec)
-    #         target = make_target(train_Y_splitted[index], device)
-    #         loss = loss_function(probs, target)
-    #         loss.backward()
-    #         optimizer.step()
-    #     print(f'{epoch + 1} epoch completed')
-    #
-    # bow_ff_nn_predictions = []
-    # original_lables_ff_bow = []
-    # with torch.no_grad():
-    #     for index, tweet in enumerate(test_X_splitted):
-    #         bow_vec = make_bow_vector(tweet_dict, tweet.split(), device)
-    #         probs = ff_nn_bow_model(bow_vec)
-    #         bow_ff_nn_predictions.append(torch.argmax(probs, dim=1).cpu().numpy()[0])
-    #         original_lables_ff_bow.append(make_target(test_Y_splitted[index], device).cpu().numpy()[0])
-    #
-    # print(classification_report(original_lables_ff_bow,bow_ff_nn_predictions))
-    # print(f'\n\nAccuracy: {accuracy_score(original_lables_ff_bow,bow_ff_nn_predictions)}')
-    # print(f'Time took: {datetime.now() - start}')
 
 
-    start = datetime.now()
-    print('\n------------------------------ Naive bayes model ------------------------------')
+
+
+def load_best_model():
+    """
+    Loads best model from pickle file
+    Returns:
+            (model): the model that was loaded
+    """
+    model_file = open('model', 'rb')
+    model = pickle.load(model_file)
+    model_file.close()
+    return model
+
+def train_best_model():
+    """
+    Trains the best model of the four models
+    Returns:
+            (model): best model after training
+    """
+    tweets_df_train = read_tsv('trump_train.tsv', ['tweet_id', 'user_handle', 'tweet_text', 'time_stamp', 'device'])
+    tweet_class_list = separte_tweets(tweets_df_train)  # Tuple: (pp tweet, class, org tweet)
+
+    train_X_splitted = [tpl[0] for tpl in tweet_class_list]
+    train_Y_splitted = [tpl[1] for tpl in tweet_class_list]
+    original_train_tweets = [tpl[2] for tpl in tweet_class_list]
+
+    vectorizer = CountVectorizer(stop_words='english', lowercase=True)
+    train_X = form_features(vectorizer.fit_transform(train_X_splitted).toarray(), original_train_tweets)
+    train_Y = train_Y_splitted
+
+    if os.path.exists('vectorizer'):
+        os.remove('vectorizer')
+    vec_file = open('vectorizer','wb')
+    pickle.dump(vectorizer, vec_file)
+    vec_file.close()
+    return train_LogReg_model(train_X, train_Y)
+
+
+def predict(m, fn):
+    """
+    Make predictions on the test set with the input model
+    Args:
+        m (model): trained model to predict with
+        fn (str): path to test set
+    Returns:
+            (list): list of preditions
+    """
+    test_data = get_test_data(fn)
+    test_X_splitted = [tpl[0] for tpl in test_data]
+    original_test_tweets = [tpl[1] for tpl in test_data]
+    vec_file = open('vectorizer', 'rb')
+    vectorizer = pickle.load(vec_file)
+    vec_file.close()
+    os.remove('vectorizer')
+    test_X = form_features(vectorizer.transform(test_X_splitted).toarray(), original_test_tweets)
+    return list(m.predict(test_X))
+
+def train_LogReg_model(train_X, train_Y):
+    """
+    Trains Logistic regression model
+    Args:
+        train_X (list): list of tweets
+        train_Y (list): list of classes
+    Returns:
+            (model): trained Logistic regression model
+    """
+    LogReg_model = LogisticRegression(max_iter=500, multi_class='ovr')
+    LogReg_model.fit(train_X, train_Y)
+    return LogReg_model
+
+def train_SVM_model(train_X, train_Y, kernel):
+    """
+    Trains SVM model
+    Args:
+        train_X (list): list of tweets
+        train_Y (list): list of classes
+        kernel (str): the kernel to use
+    Returns:
+            (model): trained SVM model
+    """
+    if kernel == 'linear':
+        SVM_model = make_pipeline(StandardScaler(), SVC(gamma='auto', kernel='linear'))
+        SVM_model.fit(train_X, train_Y)
+    else:
+        SVM_model = make_pipeline(StandardScaler(), SVC(gamma='auto', kernel='sigmoid', C=10))
+        SVM_model.fit(train_X, train_Y)
+    return SVM_model
+
+def train_NaiveBayes_model(train_X, train_Y):
+    """
+    Trains Naive bayes model
+    Args:
+        train_X (list): list of tweets
+        train_Y (list): list of classes
+    Returns:
+            (model): trained Naive bayes model
+    """
     NaiveBayes_model = MultinomialNB(fit_prior=False)
     NaiveBayes_model.fit(train_X, train_Y)
-    predictions = NaiveBayes_model.predict(test_X)
-    print(f'\n{predictions}')
-    print(f'\nAccuracy: {accuracy_score(test_Y, predictions)}')
-    print(f'Time took: {datetime.now()-start}')
-    # start = datetime.now()
-    # cv_scores = use_cross_validation(tweets_class_list, NaiveBayes_model, 5,vectorizer)
-    # print(f'\nAccuracy Cross-validation: {np.average(cv_scores)}')
-    # print(f'Time took: {datetime.now()-start}')
+    return NaiveBayes_model
+
+def train_FFNN_model(tweet_class_list, train_X_splitted, train_Y_splitted):
+    """
+    Trains FFNN model
+    Args:
+        tweet_class_list (list): list of tuples (pp tweet, class, original tweet)
+        train_X_splitted (list): list of tweets
+        train_Y_splitted (list): list of classes
+    Returns:
+            (model): trained FFNN model
+            (dict): token vocabulary
+            (device): the device the model ran on
+    """
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    tweet_dict = make_dict([[token for token in tpl[0].split()] for tpl in tweet_class_list], False)
+
+    input_dim = len(tweet_dict)
+    hidden_dim = 500
+    output_dim = 2
+    num_epochs = 20
+
+    ff_nn_bow_model = FeedforwardNeuralNetModel(input_dim, hidden_dim, output_dim)
+    ff_nn_bow_model.to(device)
+
+    loss_function = nn.CrossEntropyLoss()
+    optimizer = optim.SGD(ff_nn_bow_model.parameters(), lr=0.001)
+
+    for epoch in range(num_epochs):
+        for index, tweet in enumerate(train_X_splitted):
+            optimizer.zero_grad()
+            bow_vec = make_bow_vector(tweet_dict, tweet.split(), device)
+            probs = ff_nn_bow_model(bow_vec)
+            target = make_target(train_Y_splitted[index], device)
+            loss = loss_function(probs, target)
+            loss.backward()
+            optimizer.step()
+        print(f'{epoch + 1} epoch completed')
+
+    return ff_nn_bow_model, tweet_dict, device
+
+
+def predict_FFNN_model(ff_nn_bow_model,tweet_dict, test_X_splitted, test_Y_splitted, device):
+    """
+    Makes predictions with FFNN model:
+    Args:
+        ff_nn_bow_model (model): trained FFNN model
+        tweet_dict (dict): token vocabulary
+        test_X_splitted (list): tweets test set
+        test_Y_splitted (list): classes test set
+        device (device): the device the FFNN model ran on
+    Return:
+            (list): original test set predictions
+            (list): the predictions made by the FFNN model
+    """
+    bow_ff_nn_predictions = []
+    original_lables_ff_bow = []
+    with torch.no_grad():
+        for index, tweet in enumerate(test_X_splitted):
+            bow_vec = make_bow_vector(tweet_dict, tweet.split(), device)
+            probs = ff_nn_bow_model(bow_vec)
+            bow_ff_nn_predictions.append(torch.argmax(probs, dim=1).cpu().numpy()[0])
+            original_lables_ff_bow.append(make_target(test_Y_splitted[index], device).cpu().numpy()[0])
+    return original_lables_ff_bow, bow_ff_nn_predictions
+
 
 
 def separte_tweets(tweets_df):
@@ -378,14 +490,16 @@ def use_cross_validation(tweet_class_list, model, folds,vectorizer):
                     [str(value) for value in [tpl[1] for tpl in tweet_class_list]],
                     cv=folds)
 
-def get_test_data():
+def get_test_data(fn):
     """
     Reads the test data and applys preprocessing on it
+    Args:
+        fn (str): test file path
     Returns:
             (list): list of tuples of pp tweet and original tweet
     """
     stop_words = set(stopwords.words('english'))
-    tweets_df_test = read_tsv('trump_test.tsv',['user_handle','tweet_text','time_stamp'])
+    tweets_df_test = read_tsv(fn, ['user_handle','tweet_text','time_stamp'])
     tweet_list = []
     for index, row in tweets_df_test.iterrows():
         pp_tweet = preprocess(row['tweet_text'], stop_words)
@@ -400,7 +514,7 @@ def write_test_predictions(predictions):
          predictions (list): list of 0,1 predictions
     """
     result_string = ' '.join([str(pred) for pred in predictions])
-    open('results','w').write(result_string)
+    open('317649606.txt','w').write(result_string)
 
 
 def make_dict(token_list, padding=True):
