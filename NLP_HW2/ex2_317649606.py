@@ -22,6 +22,11 @@ import torch
 
 from sklearn.metrics import classification_report
 
+best_model_glob = None
+best_vectorizer_glob = None
+trained_model_glob = None
+trained_vectorizer_glob = None
+
 
 def main():
 
@@ -32,7 +37,9 @@ def main():
 
     # region Submission
     model_file = open('model','wb')
-    pickle.dump(train_best_model(), model_file)
+    global trained_vectorizer_glob
+    model_vectorizer_tpl = (train_best_model(), trained_vectorizer_glob)
+    pickle.dump(model_vectorizer_tpl, model_file)
     model_file.close()
 
     best_model = load_best_model()
@@ -119,8 +126,11 @@ def load_best_model():
             (model): the model that was loaded
     """
     model_file = open('model', 'rb')
-    model = pickle.load(model_file)
+    model, vectorizer = pickle.load(model_file)
     model_file.close()
+    global best_vectorizer_glob, best_model_glob
+    best_vectorizer_glob = vectorizer
+    best_model_glob = model
     return model
 
 def train_best_model(fn='trump_train.tsv'):
@@ -139,7 +149,13 @@ def train_best_model(fn='trump_train.tsv'):
     vectorizer = CountVectorizer(stop_words='english', lowercase=True)
     train_X = form_features(vectorizer.fit_transform(train_X_splitted).toarray(), original_train_tweets)
     train_Y = train_Y_splitted
-    return train_LogReg_model(train_X, train_Y)
+
+    LogReg_model = train_LogReg_model(train_X, train_Y)
+
+    global trained_vectorizer_glob, trained_model_glob
+    trained_vectorizer_glob = vectorizer
+    trained_model_glob = LogReg_model
+    return LogReg_model
 
 
 def predict(m, fn):
@@ -155,10 +171,13 @@ def predict(m, fn):
     test_X_splitted = [tpl[0] for tpl in test_data]
     original_test_tweets = [tpl[1] for tpl in test_data]
 
-    tweets_df_train = read_tsv('trump_train.tsv', ['tweet_id', 'user_handle', 'tweet_text', 'time_stamp', 'device'])
-    train_X_splitted = [tpl[0] for tpl in separte_tweets(tweets_df_train)]
-    vectorizer = CountVectorizer(stop_words='english', lowercase=True)
-    vectorizer.fit_transform(train_X_splitted)
+    vectorizer = None
+    global trained_model_glob, trained_vectorizer_glob, best_model_glob, best_vectorizer_glob
+    if m is trained_model_glob:
+        vectorizer = trained_vectorizer_glob
+    elif m is best_model_glob:
+        vectorizer = best_vectorizer_glob
+
     test_X = form_features(vectorizer.transform(test_X_splitted).toarray(), original_test_tweets)
     return list(m.predict(test_X))
 
