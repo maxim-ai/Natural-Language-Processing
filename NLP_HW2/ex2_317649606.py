@@ -1,5 +1,4 @@
 import csv
-import os
 import pickle
 from sklearn.feature_extraction.text import CountVectorizer
 from sklearn.linear_model import LogisticRegression
@@ -31,7 +30,7 @@ def main():
     """
 
 
-    # # region Submission
+    # region Submission
     model_file = open('model','wb')
     pickle.dump(train_best_model(), model_file)
     model_file.close()
@@ -40,7 +39,7 @@ def main():
 
     predictions = predict(best_model, 'trump_test.tsv')
     write_test_predictions(predictions)
-    # # endregion
+    # endregion
 
 
     # # region My tests
@@ -124,13 +123,13 @@ def load_best_model():
     model_file.close()
     return model
 
-def train_best_model():
+def train_best_model(fn='trump_train.tsv'):
     """
     Trains the best model of the four models
     Returns:
             (model): best model after training
     """
-    tweets_df_train = read_tsv('trump_train.tsv', ['tweet_id', 'user_handle', 'tweet_text', 'time_stamp', 'device'])
+    tweets_df_train = read_tsv(fn , ['tweet_id', 'user_handle', 'tweet_text', 'time_stamp', 'device'])
     tweet_class_list = separte_tweets(tweets_df_train)  # Tuple: (pp tweet, class, org tweet)
 
     train_X_splitted = [tpl[0] for tpl in tweet_class_list]
@@ -140,12 +139,6 @@ def train_best_model():
     vectorizer = CountVectorizer(stop_words='english', lowercase=True)
     train_X = form_features(vectorizer.fit_transform(train_X_splitted).toarray(), original_train_tweets)
     train_Y = train_Y_splitted
-
-    if os.path.exists('vectorizer'):
-        os.remove('vectorizer')
-    vec_file = open('vectorizer','wb')
-    pickle.dump(vectorizer, vec_file)
-    vec_file.close()
     return train_LogReg_model(train_X, train_Y)
 
 
@@ -156,15 +149,16 @@ def predict(m, fn):
         m (model): trained model to predict with
         fn (str): path to test set
     Returns:
-            (list): list of preditions
+            (list): list of predictions
     """
     test_data = get_test_data(fn)
     test_X_splitted = [tpl[0] for tpl in test_data]
     original_test_tweets = [tpl[1] for tpl in test_data]
-    vec_file = open('vectorizer', 'rb')
-    vectorizer = pickle.load(vec_file)
-    vec_file.close()
-    os.remove('vectorizer')
+
+    tweets_df_train = read_tsv('trump_train.tsv', ['tweet_id', 'user_handle', 'tweet_text', 'time_stamp', 'device'])
+    train_X_splitted = [tpl[0] for tpl in separte_tweets(tweets_df_train)]
+    vectorizer = CountVectorizer(stop_words='english', lowercase=True)
+    vectorizer.fit_transform(train_X_splitted)
     test_X = form_features(vectorizer.transform(test_X_splitted).toarray(), original_test_tweets)
     return list(m.predict(test_X))
 
@@ -247,7 +241,6 @@ def train_FFNN_model(tweet_class_list, train_X_splitted, train_Y_splitted):
             loss = loss_function(probs, target)
             loss.backward()
             optimizer.step()
-        print(f'{epoch + 1} epoch completed')
 
     return ff_nn_bow_model, tweet_dict, device
 
