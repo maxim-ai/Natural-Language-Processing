@@ -30,9 +30,21 @@ def main():
     # print(f'Accuracy is {right_predictions / sum([len(sentence) for sentence in test_sentences])}')
 
     predicted_tags = []
+    temp_test_senteces = []
     for sentence in test_sentences:
-        predicted_tags.append(hmm_tag_sentence([word for word, tag in sentence], A, B))
-
+        tokens = [(word, tag) for word, tag in sentence]
+        if len(tokens) != 0:
+            predicted_tags.append(hmm_tag_sentence([word for word,tag in tokens], A, B))
+            temp_test_senteces.append(tokens)
+    test_sentences = temp_test_senteces
+    right_predictions = 0
+    for test_sentence, predicted_sentence in zip(test_sentences, predicted_tags):
+        for (test_word, test_tag), (predicted_word, predicted_tag) in zip(test_sentence, predicted_sentence):
+            if test_tag == predicted_tag:
+                right_predictions += 1
+    print('---HMM tag sentece---')
+    print(f'Accuracy is {right_predictions / sum([len(sentence) for sentence in test_sentences])}\n')
+    x = 0
     stop = 0
 
 
@@ -160,8 +172,10 @@ def learn_params(tagged_sentences):
                 A[tag_tag_combo] = log((count + 1) / (len(tagged_sentences) + len(set_all_tags) + 2), 10)
         elif second_tag == END:
             if count != 0:
-                try: A[tag_tag_combo] = log(count / dict_end_tag[first_tag], 10)
-                except ZeroDivisionError: A[tag_tag_combo] = log((count+1) / (len(set_all_tags) + 2), 10)
+                try:
+                    A[tag_tag_combo] = log(count / dict_end_tag[first_tag], 10)
+                except ZeroDivisionError:
+                    A[tag_tag_combo] = log((count+1) / (len(set_all_tags) + 2), 10)
             else:
                 A[tag_tag_combo] = log((count+1) / (dict_end_tag[first_tag] + len(set_all_tags) + 2), 10)
         else:
@@ -261,15 +275,14 @@ def viterbi(sentence, A,B):
 
     #TODO complete the code
     global START,END,UNK,allTagCounts,perWordTagCounts,emissionCounts
-    set_all_tags = (dict(allTagCounts)).keys()
+    set_all_tags = set((dict(allTagCounts)).keys())
 
     #First iteration
     first_word = sentence[0]
     first_column = []
     for tag in set_all_tags:
         tag_word_combo = f'{tag}+{first_word}'
-        if first_word in perWordTagCounts:
-            if tag_word_combo not in emissionCounts or emissionCounts[tag_word_combo] == 0: continue
+        if first_word in perWordTagCounts and tag_word_combo not in B:continue
         try:
             A_prob = pow(10,A[f'{START}+{tag}'])
             B_prob = pow(10, B[tag_word_combo])
@@ -284,8 +297,7 @@ def viterbi(sentence, A,B):
         next_column = []
         for tag in set_all_tags:
             tag_word_combo = f'{tag}+{word}'
-            if word in perWordTagCounts:
-                if tag_word_combo not in emissionCounts or emissionCounts[tag_word_combo] == 0: continue
+            if word in perWordTagCounts and tag_word_combo not in B: continue
             probs_dict = {}
             for column_tag_tpl in curr_column:
                 column_tag, previous, column_prob = column_tag_tpl
@@ -302,13 +314,12 @@ def viterbi(sentence, A,B):
 
 
     #Last iteration
-    v_last = None
     max_prob = 0
     max_prob_tpl = tuple()
     for tpl in curr_column:
         column_tag, previous, column_prob = tpl
         if pow(10,column_prob) > max_prob:
-            max_prob, max_prob_tpl = column_prob, tpl
+            max_prob, max_prob_tpl = pow(10, column_prob), tpl
 
     v_last = (END, max_prob_tpl, max_prob_tpl[2])
     return v_last
@@ -325,6 +336,7 @@ def retrace(end_item):
     while curr_item[1] != START:
         list_of_tags.append(curr_item[0])
         curr_item = curr_item[1]
+    list_of_tags.append(curr_item[0])
     list_of_tags.reverse()
     return list_of_tags
 
