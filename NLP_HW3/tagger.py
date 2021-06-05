@@ -42,10 +42,11 @@ def main():
         for (test_word, test_tag), (predicted_word, predicted_tag) in zip(test_sentence, predicted_sentence):
             if test_tag == predicted_tag:
                 right_predictions += 1
-    print('---HMM tag sentece---')
+    print('---HMM tag sentence---')
     print(f'Accuracy is {right_predictions / sum([len(sentence) for sentence in test_sentences])}\n')
-    x = 0
-    stop = 0
+    Maxim = 100
+    for sentence in predicted_tags:
+        print(joint_prob(sentence, A, B))
 
 
 # utility functions to read the corpus
@@ -288,7 +289,7 @@ def viterbi(sentence, A,B):
             B_prob = pow(10, B[tag_word_combo])
             prob = log(A_prob * B_prob , 10)
         except KeyError:
-            prob = log(A_prob * (1/allTagCounts[tag]),10)
+            prob = log(A_prob * (1/allTagCounts[tag]+len(allTagCounts)+2),10)
         first_column.append((tag, START, prob))
 
     #Other iterations
@@ -306,7 +307,7 @@ def viterbi(sentence, A,B):
                     B_prob = pow(10, B[tag_word_combo])
                     prob = log(pow(10, column_prob) * A_prob * B_prob, 10)
                 except KeyError:
-                    prob = log(pow(10, column_prob) * A_prob * (1/allTagCounts[tag]), 10)
+                    prob = log(pow(10, column_prob) * A_prob * (1/(allTagCounts[tag]+len(allTagCounts)+2)), 10)
                 probs_dict[column_tag_tpl] = prob
             max_prob_tpl = max(probs_dict, key=probs_dict.get)
             next_column.append((tag,max_prob_tpl ,probs_dict[max_prob_tpl]))
@@ -358,9 +359,32 @@ def joint_prob(sentence, A, B):
          A (dict): The HMM Transition probabilities
          B (dict): the HMM emmission probabilities.
      """
-    p = 0   # joint log prob. of words and tags
+    p = 1   # joint log prob. of words and tags
 
     #TODO complete the code
+    global START,END,UNK,allTagCounts
+    for i in range(len(sentence)):
+        if i == 0:
+            word, tag = sentence[i]
+            try:
+                A_prob = pow(10,A[f'{START}+{tag}'])
+                B_prob = pow(10,B[f'{tag}+{word}'])
+                p *= A_prob*B_prob
+            except:
+                B_prob = 1/(allTagCounts[tag] + len(allTagCounts) + 2)
+                p *= A_prob * B_prob
+        else:
+            pre_word, pre_tag = sentence[i - 1]
+            curr_word, curr_tag = sentence[i]
+            try:
+                A_prob = pow(10,A[f'{pre_tag}+{curr_tag}'])
+                B_prob = pow(10,B[f'{curr_tag}+{curr_word}'])
+                p *= A_prob * B_prob
+            except KeyError:
+                B_prob = 1/(allTagCounts[curr_tag] + len(allTagCounts) + 2)
+                p *= A_prob * B_prob
+
+    p = log(p, 10)
 
     assert isfinite(p) and p<0  # Should be negative. Think why!
     return p
@@ -415,7 +439,14 @@ def count_correct(gold_sentence, pred_sentence):
     assert len(gold_sentence)==len(pred_sentence)
 
     #TODO complete the code
-    correct, correctOOV, OOV = None, None, None
+    global allTagCounts, perWordTagCounts
+    correct, correctOOV = 0, 0
+    for (gold_word, gold_tag), (pred_word, pred_tag) in zip(gold_sentence, pred_sentence):
+        if gold_tag == pred_tag:
+            correct += 1
+            if pred_word not in perWordTagCounts:
+                correctOOV += 1
+    OOV = len([word for word, tag in pred_sentence if word not in perWordTagCounts])
     return correct, correctOOV, OOV
 
 
