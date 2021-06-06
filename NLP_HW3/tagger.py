@@ -29,24 +29,15 @@ def main():
     # print('---Baseline tag sentece---')
     # print(f'Accuracy is {right_predictions / sum([len(sentence) for sentence in test_sentences])}')
 
-    predicted_tags = []
-    temp_test_senteces = []
-    for sentence in test_sentences:
-        tokens = [(word, tag) for word, tag in sentence]
-        if len(tokens) != 0:
-            predicted_tags.append(hmm_tag_sentence([word for word,tag in tokens], A, B))
-            temp_test_senteces.append(tokens)
-    test_sentences = temp_test_senteces
+    predicted_senteces = [hmm_tag_sentence([word for word,tag in sentence], A, B) for sentence in test_sentences]
     right_predictions = 0
-    for test_sentence, predicted_sentence in zip(test_sentences, predicted_tags):
-        for (test_word, test_tag), (predicted_word, predicted_tag) in zip(test_sentence, predicted_sentence):
-            if test_tag == predicted_tag:
-                right_predictions += 1
-    print('---HMM tag sentence---')
-    print(f'Accuracy is {right_predictions / sum([len(sentence) for sentence in test_sentences])}\n')
-    Maxim = 100
-    for sentence in predicted_tags:
-        print(joint_prob(sentence, A, B))
+    for gold_sentence, pred_sentence in zip(test_sentences, predicted_senteces):
+        right_predictions += count_correct(gold_sentence, pred_sentence)[0]
+
+    print('\n---HMM tagging---')
+    print(f'{right_predictions / sum([len(sentence) for sentence in predicted_senteces])}')
+    # for sentence in predicted_tags:
+    #     print(joint_prob(sentence, A, B))
 
 
 # utility functions to read the corpus
@@ -160,30 +151,30 @@ def learn_params(tagged_sentences):
         for word in set_all_words:
             emissionCounts[f'{tag}+{word}'] = 0
     for sentence in tagged_sentences:
-        for word,tag in sentence:
+        for word, tag in sentence:
             emissionCounts[f'{tag}+{word}'] += 1
 
     #A population
-    for tag_tag_combo,count in transitionCounts.items():
+    for tag_tag_combo, count in transitionCounts.items():
         first_tag,second_tag = tag_tag_combo.split('+')[0], tag_tag_combo.split('+')[1]
         if first_tag == START:
             if count != 0:
                 A[tag_tag_combo] = log(count / len(tagged_sentences), 10)
             else:
-                A[tag_tag_combo] = log((count + 1) / (len(tagged_sentences) + len(set_all_tags) + 2), 10)
+                A[tag_tag_combo] = log((count + 1) / (len(tagged_sentences) + len(set_all_tags)), 10)
         elif second_tag == END:
             if count != 0:
                 try:
-                    A[tag_tag_combo] = log(count / dict_end_tag[first_tag], 10)
+                    A[tag_tag_combo] = log(count / len(tagged_sentences), 10)
                 except ZeroDivisionError:
-                    A[tag_tag_combo] = log((count+1) / (len(set_all_tags) + 2), 10)
+                    A[tag_tag_combo] = log((count+1) / (len(set_all_tags)), 10)
             else:
-                A[tag_tag_combo] = log((count+1) / (dict_end_tag[first_tag] + len(set_all_tags) + 2), 10)
+                A[tag_tag_combo] = log((count+1) / (len(tagged_sentences) + len(set_all_tags)), 10)
         else:
             if count != 0:
                 A[tag_tag_combo] = log(count / allTagCounts[first_tag], 10)
             else:
-                A[tag_tag_combo] = log((count + 1) / (allTagCounts[first_tag] + len(set_all_tags) + 2), 10)
+                A[tag_tag_combo] = log((count + 1) / (allTagCounts[first_tag] + len(set_all_tags)), 10)
 
     #B population
     for tag_word_combo, count in emissionCounts.items():
@@ -191,7 +182,7 @@ def learn_params(tagged_sentences):
         if count != 0:
             B[tag_word_combo] = log(count / allTagCounts[tag], 10)
         else:
-            B[tag_word_combo] = log((count + 1) / (allTagCounts[tag] + len(set_all_tags) + 2), 10)
+            B[tag_word_combo] = log((count + 1) / (allTagCounts[tag] + len(set_all_tags)), 10)
 
     return [allTagCounts,perWordTagCounts,transitionCounts,emissionCounts,A,B]
 
@@ -283,13 +274,14 @@ def viterbi(sentence, A,B):
     first_column = []
     for tag in set_all_tags:
         tag_word_combo = f'{tag}+{first_word}'
-        if first_word in perWordTagCounts and tag_word_combo not in B:continue
+        if first_word in perWordTagCounts and tag_word_combo not in B: continue
         try:
-            A_prob = pow(10,A[f'{START}+{tag}'])
+            A_prob = pow(10, A[f'{START}+{tag}'])
             B_prob = pow(10, B[tag_word_combo])
-            prob = log(A_prob * B_prob , 10)
+            prob = log(A_prob * B_prob, 10)
         except KeyError:
-            prob = log(A_prob * (1/allTagCounts[tag]+len(allTagCounts)+2),10)
+            B_prob = 1/allTagCounts[tag]+len(set_all_tags)
+            prob = log(A_prob * B_prob, 10)
         first_column.append((tag, START, prob))
 
     #Other iterations
@@ -307,22 +299,29 @@ def viterbi(sentence, A,B):
                     B_prob = pow(10, B[tag_word_combo])
                     prob = log(pow(10, column_prob) * A_prob * B_prob, 10)
                 except KeyError:
-                    prob = log(pow(10, column_prob) * A_prob * (1/(allTagCounts[tag]+len(allTagCounts)+2)), 10)
+                    B_prob = 1/(allTagCounts[tag]+len(set_all_tags))
+                    prob = log(pow(10, column_prob) * A_prob * B_prob, 10)
                 probs_dict[column_tag_tpl] = prob
             max_prob_tpl = max(probs_dict, key=probs_dict.get)
-            next_column.append((tag,max_prob_tpl ,probs_dict[max_prob_tpl]))
+            next_column.append((tag, max_prob_tpl, probs_dict[max_prob_tpl]))
         curr_column = next_column
 
 
     #Last iteration
-    max_prob = 0
-    max_prob_tpl = tuple()
-    for tpl in curr_column:
-        column_tag, previous, column_prob = tpl
-        if pow(10,column_prob) > max_prob:
-            max_prob, max_prob_tpl = pow(10, column_prob), tpl
+    # max_prob = 0
+    # max_prob_tpl = tuple()
+    # for tpl in curr_column:
+    #     column_tag, previous, column_prob = tpl
+    #     tag_end_prob = pow(10, column_prob) * pow(10, A[f'{column_tag}+{END}'])
+    #     if tag_end_prob > max_prob:
+    #         max_prob, max_prob_tpl = tag_end_prob, tpl
+    # v_last = (END, max_prob_tpl, max_prob_tpl[2])
 
-    v_last = (END, max_prob_tpl, max_prob_tpl[2])
+    prob_dict = {(tpl[0],tpl[1]):log(pow(10,tpl[2]) * pow(10,A[f'{tpl[0]}+{END}']),10) for tpl in curr_column}
+    max_prob_tpl = max(prob_dict, key = prob_dict.get)
+    v_last = (END, max_prob_tpl, prob_dict[max_prob_tpl])
+
+
     return v_last
 
 #a suggestion for a helper function. Not an API requirement
@@ -370,8 +369,8 @@ def joint_prob(sentence, A, B):
                 A_prob = pow(10,A[f'{START}+{tag}'])
                 B_prob = pow(10,B[f'{tag}+{word}'])
                 p *= A_prob*B_prob
-            except:
-                B_prob = 1/(allTagCounts[tag] + len(allTagCounts) + 2)
+            except KeyError:
+                B_prob = 1/(allTagCounts[tag] + len(allTagCounts))
                 p *= A_prob * B_prob
         else:
             pre_word, pre_tag = sentence[i - 1]
@@ -381,7 +380,7 @@ def joint_prob(sentence, A, B):
                 B_prob = pow(10,B[f'{curr_tag}+{curr_word}'])
                 p *= A_prob * B_prob
             except KeyError:
-                B_prob = 1/(allTagCounts[curr_tag] + len(allTagCounts) + 2)
+                B_prob = 1/(allTagCounts[curr_tag] + len(allTagCounts))
                 p *= A_prob * B_prob
 
     p = log(p, 10)
