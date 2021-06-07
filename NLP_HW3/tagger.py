@@ -26,16 +26,16 @@ def main():
     #     for (test_word, test_tag), (predicted_word, predicted_tag) in zip(test_sentence, predicted_sentence):
     #         if test_tag == predicted_tag:
     #             right_predictions += 1
-    # print('\n---Baseline tag sentece---')
+    # print('---Baseline tag sentece---')
     # print(f'Accuracy is {right_predictions / sum([len(sentence) for sentence in test_sentences])}')
-    for i in range(1):
-        predicted_senteces = [hmm_tag_sentence([word for word,tag in sentence], A, B) for sentence in test_sentences]
-        right_predictions = 0
-        for gold_sentence, pred_sentence in zip(test_sentences, predicted_senteces):
-            right_predictions += count_correct(gold_sentence, pred_sentence)[0]
 
-        print('\n---HMM tagging---')
-        print(f'{right_predictions / sum([len(sentence) for sentence in predicted_senteces])}')
+    predicted_senteces = [hmm_tag_sentence([word for word,tag in sentence], A, B) for sentence in test_sentences]
+    right_predictions = 0
+    for gold_sentence, pred_sentence in zip(test_sentences, predicted_senteces):
+        right_predictions += count_correct(gold_sentence, pred_sentence)[0]
+
+    print('\n---HMM tagging---')
+    print(f'{right_predictions / sum([len(sentence) for sentence in predicted_senteces])}')
     # for sentence in predicted_tags:
     #     print(joint_prob(sentence, A, B))
 
@@ -126,62 +126,63 @@ def learn_params(tagged_sentences):
 
     #perWordTagCounts population
     for word in all_words:
-        perWordTagCounts[word] = Counter({tag:0 for tag in set_all_tags})
+        perWordTagCounts[word] = {tag:0 for tag in set_all_tags}
     for sentence in tagged_sentences:
         for word, tag in sentence:
             perWordTagCounts[word][tag] += 1
 
     #transitionCounts population
-    transitionCounts[START] = Counter({tag:0 for tag in set_all_tags})
     for tag1 in set_all_tags:
-        transitionCounts[tag1] = Counter({tag2:0 for tag2 in set_all_tags})
-        transitionCounts[tag1][END] = 0
+        transitionCounts[f'{START}+{tag1}'] = 0
+        transitionCounts[f'{tag1}+{END}'] = 0
+        for tag2 in set_all_tags:
+            transitionCounts[f'{tag1}+{tag2}'] = 0
 
     for sentence in tagged_sentences:
         first_tag, last_tag = sentence[0][1], sentence[-1][1]
-        transitionCounts[START][first_tag] += 1
-        transitionCounts[last_tag][END] += 1
+        transitionCounts[f'{START}+{first_tag}'] += 1
+        transitionCounts[f'{last_tag}+{END}'] += 1
         for index in range(len(sentence)-1):
-            index_tag, index_plusone_tag = sentence[index][1], sentence[index+1][1]
-            transitionCounts[index_tag][index_plusone_tag] += 1
+            tag_tag_combo = f'{sentence[index][1]}+{sentence[index+1][1]}'
+            transitionCounts[tag_tag_combo] += 1
 
     #emissionCounts population
     for tag in set_all_tags:
-        emissionCounts[tag] = Counter({word:0 for word in set_all_words})
+        for word in set_all_words:
+            emissionCounts[f'{tag}+{word}'] = 0
     for sentence in tagged_sentences:
         for word, tag in sentence:
-            emissionCounts[tag][word] += 1
+            emissionCounts[f'{tag}+{word}'] += 1
 
     #A population
-    for first_tag, trans_counter in transitionCounts.items():
-        A[first_tag] = {}
-        for second_tag, count in trans_counter.items():
+    for tag_tag_combo, count in transitionCounts.items():
+        first_tag,second_tag = tag_tag_combo.split('+')[0], tag_tag_combo.split('+')[1]
+        if first_tag == START:
             if count != 0:
-                if first_tag == START:
-                    A[first_tag][second_tag] = log(count/len(tagged_sentences), 10)
-                else:
-                    if second_tag == END:
-                        A[first_tag][second_tag] = log(count/len(tagged_sentences), 10)
-                    else:
-                        A[first_tag][second_tag] = log(count/allTagCounts[first_tag], 10)
+                A[tag_tag_combo] = log(count / len(tagged_sentences), 10)
             else:
-                if first_tag == START:
-                    A[first_tag][second_tag] = log(1 / (len(tagged_sentences)+len(set_all_tags)), 10)
-                else:
-                    if second_tag == END:
-                        A[first_tag][second_tag] = log(1 / (len(tagged_sentences) + len(set_all_tags)), 10)
-                    else:
-                        A[first_tag][second_tag] = log(1 / (allTagCounts[first_tag]+len(set_all_tags)), 10)
-
+                A[tag_tag_combo] = log((count + 1) / (len(tagged_sentences) + len(set_all_tags)), 10)
+        elif second_tag == END:
+            if count != 0:
+                try:
+                    A[tag_tag_combo] = log(count / len(tagged_sentences), 10)
+                except ZeroDivisionError:
+                    A[tag_tag_combo] = log((count+1) / (len(set_all_tags)), 10)
+            else:
+                A[tag_tag_combo] = log((count+1) / (len(tagged_sentences) + len(set_all_tags)), 10)
+        else:
+            if count != 0:
+                A[tag_tag_combo] = log(count / allTagCounts[first_tag], 10)
+            else:
+                A[tag_tag_combo] = log((count + 1) / (allTagCounts[first_tag] + len(set_all_tags)), 10)
 
     #B population
-    for tag, emm_counter in emissionCounts.items():
-        B[tag] = {}
-        for word, count in emm_counter.items():
-            if count != 0:
-                B[tag][word] = log(count / allTagCounts[tag], 10)
-            else:
-                B[tag][word] = log(1 / (allTagCounts[tag] + len(set_all_tags)), 10)
+    for tag_word_combo, count in emissionCounts.items():
+        tag, word = tag_word_combo.split('+')[0], tag_word_combo.split('+')[1]
+        if count != 0:
+            B[tag_word_combo] = log(count / allTagCounts[tag], 10)
+        else:
+            B[tag_word_combo] = log((count + 1) / (allTagCounts[tag] + len(set_all_tags)), 10)
 
     return [allTagCounts,perWordTagCounts,transitionCounts,emissionCounts,A,B]
 
@@ -204,7 +205,7 @@ def baseline_tag_sentence(sentence, perWordTagCounts, allTagCounts):
     tagged_sentence = []
     for word in sentence:
         if word in perWordTagCounts:
-            max_tag = max(dict(perWordTagCounts[word]), key=dict(perWordTagCounts[word]).get)
+            max_tag = max(perWordTagCounts[word], key=perWordTagCounts[word].get)
             tagged_sentence.append((word, max_tag))
         else:
             sample = random.choices(list(allTagCounts.keys()), weights = list(allTagCounts.values()), k = 1)[0]
@@ -272,10 +273,11 @@ def viterbi(sentence, A,B):
     first_word = sentence[0]
     first_column = []
     for tag in set_all_tags:
-        if first_word in perWordTagCounts and first_word not in B[tag]: continue
+        tag_word_combo = f'{tag}+{first_word}'
+        if first_word in perWordTagCounts and tag_word_combo not in B: continue
         try:
-            A_prob = pow(10, A[START][tag])
-            B_prob = pow(10, B[tag][first_word])
+            A_prob = pow(10, A[f'{START}+{tag}'])
+            B_prob = pow(10, B[tag_word_combo])
             prob = log(A_prob * B_prob, 10)
         except KeyError:
             B_prob = 1/allTagCounts[tag]+len(set_all_tags)
@@ -287,13 +289,14 @@ def viterbi(sentence, A,B):
     for word in sentence[1:]:
         next_column = []
         for tag in set_all_tags:
-            if word in perWordTagCounts and word not in B[tag]: continue
+            tag_word_combo = f'{tag}+{word}'
+            if word in perWordTagCounts and tag_word_combo not in B: continue
             probs_dict = {}
             for column_tag_tpl in curr_column:
                 column_tag, previous, column_prob = column_tag_tpl
                 try:
-                    A_prob = pow(10, A[column_tag][tag])
-                    B_prob = pow(10, B[tag][word])
+                    A_prob = pow(10, A[f'{column_tag}+{tag}'])
+                    B_prob = pow(10, B[tag_word_combo])
                     prob = log(pow(10, column_prob) * A_prob * B_prob, 10)
                 except KeyError:
                     B_prob = 1/(allTagCounts[tag]+len(set_all_tags))
@@ -314,9 +317,7 @@ def viterbi(sentence, A,B):
     #         max_prob, max_prob_tpl = tag_end_prob, tpl
     # v_last = (END, max_prob_tpl, max_prob_tpl[2])
 
-    prob_dict = {}
-    for tag, previous, prob in curr_column:
-        prob_dict[(tag, previous)] = log(pow(10, prob) * pow(10, A[tag][END]), 10)
+    prob_dict = {(tpl[0],tpl[1]):log(pow(10,tpl[2]) * pow(10,A[f'{tpl[0]}+{END}']),10) for tpl in curr_column}
     max_prob_tpl = max(prob_dict, key = prob_dict.get)
     v_last = (END, max_prob_tpl, prob_dict[max_prob_tpl])
 
