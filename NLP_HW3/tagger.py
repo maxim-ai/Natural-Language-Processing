@@ -136,30 +136,30 @@ def learn_params(tagged_sentences):
 
     #transitionCounts population
     for tag1 in set_all_tags:
-        transitionCounts[f'{START}+{tag1}'] = 0
-        transitionCounts[f'{tag1}+{END}'] = 0
+        transitionCounts[(START, tag1)] = 0
+        transitionCounts[(tag1, END)] = 0
         for tag2 in set_all_tags:
-            transitionCounts[f'{tag1}+{tag2}'] = 0
+            transitionCounts[(tag1, tag2)] = 0
 
     for sentence in tagged_sentences:
         first_tag, last_tag = sentence[0][1], sentence[-1][1]
-        transitionCounts[f'{START}+{first_tag}'] += 1
-        transitionCounts[f'{last_tag}+{END}'] += 1
+        transitionCounts[(START, first_tag)] += 1
+        transitionCounts[(last_tag, END)] += 1
         for index in range(len(sentence)-1):
-            tag_tag_combo = f'{sentence[index][1]}+{sentence[index+1][1]}'
+            tag_tag_combo = (sentence[index][1], sentence[index+1][1])
             transitionCounts[tag_tag_combo] += 1
 
     #emissionCounts population
     for tag in set_all_tags:
         for word in set_all_words:
-            emissionCounts[f'{tag}+{word}'] = 0
+            emissionCounts[(tag, word)] = 0
     for sentence in tagged_sentences:
         for word, tag in sentence:
-            emissionCounts[f'{tag}+{word}'] += 1
+            emissionCounts[(tag, word)] += 1
 
     #A population
     for tag_tag_combo, count in transitionCounts.items():
-        first_tag,second_tag = tag_tag_combo.split('+')
+        first_tag,second_tag = tag_tag_combo
         if first_tag == START or second_tag == END:
             if count != 0:
                 A[tag_tag_combo] = log(count / num_of_sentences, 10)
@@ -173,7 +173,7 @@ def learn_params(tagged_sentences):
 
     #B population
     for tag_word_combo, count in emissionCounts.items():
-        tag, word = tag_word_combo.split('+')[0], tag_word_combo.split('+')[1]
+        tag, word = tag_word_combo
         if count != 0:
             B[tag_word_combo] = log(count / allTagCounts[tag], 10)
         else:
@@ -271,19 +271,19 @@ def viterbi(sentence, A,B):
     first_word = sentence[0]
     first_column = []
     for tag in set_all_tags:
-        tag_word_combo = f'{tag}+{first_word}'
-        # if first_word in perWordTagCounts and tag_word_combo not in B: continue
+        tag_word_combo = (tag, first_word)
         if first_word in perWordTagCounts:
             if tag_word_combo not in emissionCounts: continue
             elif emissionCounts[tag_word_combo]==0: continue
         try:
-            A_prob = pow(10, A[f'{START}+{tag}'])
+            A_prob = pow(10, A[(START, tag)])
         except KeyError:
             A_prob = 1/(num_of_sentences + V)
         try:
             B_prob = pow(10, B[tag_word_combo])
         except KeyError:
-            B_prob = 1/(allTagCounts[tag] + V)
+            tag_counts = 0 if tag not in allTagCounts else allTagCounts[tag]
+            B_prob = 1/(tag_counts + V)
         prob = log(A_prob * B_prob, 10)
         first_column.append((tag, START, prob))
 
@@ -292,8 +292,7 @@ def viterbi(sentence, A,B):
     for word in sentence[1:]:
         next_column = []
         for tag in set_all_tags:
-            tag_word_combo = f'{tag}+{word}'
-            # if word in perWordTagCounts and tag_word_combo not in B: continue
+            tag_word_combo = (tag, word)
             if word in perWordTagCounts:
                 if tag_word_combo not in emissionCounts: continue
                 elif emissionCounts[tag_word_combo]==0: continue
@@ -301,13 +300,15 @@ def viterbi(sentence, A,B):
             for column_tag_tpl in curr_column:
                 column_tag, previous, column_prob = column_tag_tpl
                 try:
-                    A_prob = pow(10, A[f'{column_tag}+{tag}'])
+                    A_prob = pow(10, A[(column_tag, tag)])
                 except KeyError:
-                    A_prob = 1/(allTagCounts[column_tag] + V)
+                    column_tag_counts = 0 if column_tag not in allTagCounts else allTagCounts[column_tag]
+                    A_prob = 1/(column_tag_counts + V)
                 try:
                     B_prob = pow(10, B[tag_word_combo])
                 except KeyError:
-                    B_prob = 1/(allTagCounts[tag] + V)
+                    tag_counts = 0 if tag not in allTagCounts else allTagCounts[tag]
+                    B_prob = 1/(tag_counts + V)
                 prob = log(pow(10, column_prob) * A_prob * B_prob, 10)
                 probs_dict[column_tag_tpl] = prob
             max_prob_tpl = max(probs_dict, key=probs_dict.get)
@@ -319,7 +320,7 @@ def viterbi(sentence, A,B):
     prob_dict = {}
     for column_tag, previous, column_prob in curr_column:
         try:
-            A_prob = pow(10, A[f'{column_tag}+{END}'])
+            A_prob = pow(10, A[(column_tag, END)])
         except KeyError:
             A_prob = 1 / (num_of_sentences + V)
         prob_dict[(column_tag, previous)] = log(pow(10, column_prob) * A_prob, 10)
@@ -371,29 +372,32 @@ def joint_prob(sentence, A, B):
         if i == 0:
             word, tag = sentence[i]
             try:
-                A_prob = pow(10, A[f'{START}+{tag}'])
+                A_prob = pow(10, A[(START, tag)])
             except KeyError:
                 A_prob = 1/(num_of_sentences + V)
             try:
-                B_prob = pow(10, B[f'{tag}+{word}'])
+                B_prob = pow(10, B[(tag, word)])
             except KeyError:
-                B_prob = 1/(allTagCounts[tag] + V)
+                tag_counts = 0 if tag not in allTagCounts else allTagCounts[tag]
+                B_prob = 1/(tag_counts + V)
             p *= A_prob * B_prob
         else:
             pre_word, pre_tag = sentence[i - 1]
             curr_word, curr_tag = sentence[i]
             try:
-                A_prob = pow(10, A[f'{pre_tag}+{curr_tag}'])
+                A_prob = pow(10, A[(pre_tag, curr_tag)])
             except KeyError:
-                A_prob = 1/(num_of_sentences + V)
+                pre_tag_counts = 0 if pre_tag not in allTagCounts else allTagCounts[pre_tag]
+                A_prob = 1/(pre_tag_counts + V)
             try:
-                B_prob = pow(10, B[f'{curr_tag}+{curr_word}'])
+                B_prob = pow(10, B[(curr_tag, curr_word)])
             except KeyError:
-                B_prob = 1/(allTagCounts[pre_tag] + V)
+                curr_tag_counts = 0 if curr_tag not in allTagCounts else allTagCounts[curr_tag]
+                B_prob = 1/(curr_tag_counts + V)
             p *= A_prob * B_prob
     try:
         last_word, last_tag = sentence[-1]
-        p *= pow(10, A[f'{last_tag}+{END}'])
+        p *= pow(10, A[(last_tag, END)])
     except KeyError:
         p *= 1 / (num_of_sentences + V)
     p = log(p, 10)
