@@ -14,30 +14,26 @@ import sys, os, time, platform, nltk, random
 
 
 def main():
-    global START,END, UNK, allTagCounts, perWordTagCounts, transitionCounts, emissionCounts, A, B, num_of_sentences
-    train_sentences = load_annotated_corpus('en-ud-train.upos.tsv')
-    learn_params(train_sentences)
-    test_sentences = load_annotated_corpus('en-ud-dev.upos.tsv')
-
-
-    predicted_sentences = [tag_sentence([word for word,tag in sentence], {'baseline':[perWordTagCounts,allTagCounts]})
-                      for sentence in test_sentences]
-    right_predictions = 0
-    for gold_sentence, pred_sentence in zip(test_sentences, predicted_sentences):
-        right_predictions += count_correct(gold_sentence, pred_sentence)[0]
-    print('\n---Baseline tagging---')
-    print(f'Accuracy is {right_predictions / sum([len(sentence) for sentence in test_sentences])}')
-    for sentence in predicted_sentences:
-        joint_prob(sentence, A, B)
-
-    predicted_sentences = [tag_sentence([word for word,tag in sentence], {'hmm':[A,B]}) for sentence in test_sentences]
-    right_predictions = 0
-    for gold_sentence, pred_sentence in zip(test_sentences, predicted_sentences):
-        right_predictions += count_correct(gold_sentence, pred_sentence)[0]
-    print('\n---HMM tagging---')
-    print(f'{right_predictions / sum([len(sentence) for sentence in predicted_sentences])}')
-    for sentence in predicted_sentences:
-        joint_prob(sentence, A, B)
+    """
+    Main method used for tests
+    """
+    x = 0
+    # global START,END, UNK, allTagCounts, perWordTagCounts, transitionCounts, emissionCounts, A, B, num_of_sentences
+    # train_sentences = load_annotated_corpus('en-ud-train.upos.tsv')
+    # learn_params(train_sentences)
+    # test_sentences = load_annotated_corpus('en-ud-dev.upos.tsv')
+    #
+    #
+    # predicted_sentences = [tag_sentence([word for word,tag in sentence], {'baseline':[perWordTagCounts,allTagCounts]})
+    #                   for sentence in test_sentences]
+    # right_predictions = 0
+    # for gold_sentence, pred_sentence in zip(test_sentences, predicted_sentences):
+    #     right_predictions += count_correct(gold_sentence, pred_sentence)[0]
+    #
+    # predicted_sentences = [tag_sentence([word for word,tag in sentence], {'hmm':[A,B]}) for sentence in test_sentences]
+    # right_predictions = 0
+    # for gold_sentence, pred_sentence in zip(test_sentences, predicted_sentences):
+    #     right_predictions += count_correct(gold_sentence, pred_sentence)[0]
 
 
 # utility functions to read the corpus
@@ -96,6 +92,7 @@ def learn_params(tagged_sentences):
       A and B should be the log-probability of the normalized counts, based on
       transisionCounts and  emmisionCounts
 
+
     Args:
         tagged_sentences: a list of tagged sentences, each tagged sentence is a
         list of pairs (w,t), as retunred by load_annotated_corpus().
@@ -104,6 +101,12 @@ def learn_params(tagged_sentences):
         [allTagCounts,perWordTagCounts,transitionCounts,emissionCounts,A,B] (a list)
     """
     #TODO complete the code
+
+    """
+    When an unknown transition between two tags or 
+    an unknown emission from a tag to word appears a
+    Laplace smoothing applied.
+    """
 
     global START,END, UNK, allTagCounts, perWordTagCounts, transitionCounts, emissionCounts, A, B, num_of_sentences
 
@@ -263,6 +266,12 @@ def viterbi(sentence, A,B):
 
 
     #TODO complete the code
+    """
+    When an unknown transition between two tags or 
+    an unknown emission from a tag to word appears a
+    Laplace smoothing applied.
+    """
+
     global START,END, UNK, allTagCounts, perWordTagCounts, transitionCounts, emissionCounts, num_of_sentences
     set_all_tags = set((dict(allTagCounts)).keys())
     V = len(perWordTagCounts)

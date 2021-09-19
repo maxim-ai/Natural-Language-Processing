@@ -29,93 +29,23 @@ trained_vectorizer_glob = None
 
 
 def main():
-
     """
-    The main method used for tests
+    The main method was used for tests
     """
-
 
     # region Submission
-    model_file = open('model','wb')
-    global trained_vectorizer_glob
-    model_vectorizer_tpl = (train_best_model(), trained_vectorizer_glob)
-    pickle.dump(model_vectorizer_tpl, model_file)
-    model_file.close()
-
-    best_model = load_best_model()
-
-    predictions = predict(best_model, 'trump_test.tsv')
-    write_test_predictions(predictions)
+    x = 0
+    # model_file = open('model','wb')
+    # global trained_vectorizer_glob
+    # model_vectorizer_tpl = (train_best_model(), trained_vectorizer_glob)
+    # pickle.dump(model_vectorizer_tpl, model_file)
+    # model_file.close()
+    #
+    # best_model = load_best_model()
+    #
+    # predictions = predict(best_model, 'trump_test.tsv')
+    # write_test_predictions(predictions)
     # endregion
-
-
-    # # region My tests
-    #
-    # tweets_df_train=read_tsv('trump_train.tsv',['tweet_id','user_handle','tweet_text','time_stamp','device'])
-    #
-    # tweet_class_list = separte_tweets(tweets_df_train) #Tuple: (pp tweet, class, org tweet)
-    #
-    # # For training
-    # train_X_splitted, test_X_splitted, train_Y_splitted, test_Y_splitted = split_train_test(tweet_class_list)
-    #
-    #
-    # original_train_tweets = [tpl[1] for tpl in train_X_splitted]
-    # original_test_tweets = [tpl[1] for tpl in test_X_splitted]
-    # tweet_class_list = [(tpl[0], tpl[1]) for tpl in tweet_class_list]
-    # train_X_splitted = [tpl[0] for tpl in train_X_splitted]
-    # test_X_splitted = [tpl[0] for tpl in test_X_splitted]
-    #
-    #
-    # vectorizer = CountVectorizer(stop_words='english', lowercase=True)
-    # train_X = form_features(vectorizer.fit_transform(train_X_splitted).toarray(), original_train_tweets)
-    # train_Y = train_Y_splitted
-    # test_X = form_features(vectorizer.transform(test_X_splitted).toarray(), original_test_tweets)
-    # test_Y = test_Y_splitted
-    #
-    #
-    # start = datetime.now()
-    # print('\n------------------------------ Logistic regression model ------------------------------')
-    # LogReg_model = train_LogReg_model(train_X, train_Y)
-    # predictions = LogReg_model.predict(test_X)
-    # print(f'\nAccuracy: {accuracy_score(test_Y, predictions)}')
-    # print(f'Time took: {datetime.now()-start}')
-    #
-    # # start = datetime.now()
-    # # print('\n\n\n------------------------------ SVC linear model ------------------------------')
-    # # SVMlin_model = train_SVM_model(train_X, train_Y, 'linear')
-    # # predictions = SVMlin_model.predict(test_X)
-    # # print(f'\nAccuracy: {accuracy_score(test_Y, predictions)}')
-    # # print(f'Time took: {datetime.now() - start}')
-    # #
-    # # start = datetime.now()
-    # # print('\n\n\n------------------------------ SVC non_linear model ------------------------------')
-    # # SVMnonlin_model = train_SVM_model(train_X, train_Y, 'non_linear')
-    # # predictions = SVMnonlin_model.predict(test_X)
-    # # print(f'\nAccuracy: {accuracy_score(test_Y, predictions)}')
-    # # print(f'Time took: {datetime.now() - start}')
-    #
-    # start = datetime.now()
-    # print('\n\n\n------------------------------ Naive bayes model ------------------------------')
-    # NaiveBayes_model = train_NaiveBayes_model(train_X, train_Y)
-    # predictions = NaiveBayes_model.predict(test_X)
-    # print(f'\nAccuracy: {accuracy_score(test_Y, predictions)}')
-    # print(f'Time took: {datetime.now() - start}')
-    #
-    # # start = datetime.now()
-    # # print('\n\n\n------------------------------ FFNN model ------------------------------')
-    # #
-    # # ff_nn_bow_model, tweet_dict, device = train_FFNN_model(tweet_class_list, train_X_splitted, train_Y_splitted)
-    # #
-    # # original_lables_ff_bow, bow_ff_nn_predictions = predict_FFNN_model(ff_nn_bow_model,tweet_dict,
-    # #                                                                    test_X_splitted,test_Y_splitted,device)
-    # #
-    # # print(classification_report(original_lables_ff_bow,bow_ff_nn_predictions))
-    # # print(f'\n\nAccuracy: {accuracy_score(original_lables_ff_bow,bow_ff_nn_predictions)}')
-    # # print(f'Time took: {datetime.now() - start}')
-    # # endregion
-
-
-
 
 
 
@@ -579,33 +509,14 @@ class FeedforwardNeuralNetModel(nn.Module):
     def __init__(self, input_dim, hidden_dim, output_dim):
         super(FeedforwardNeuralNetModel, self).__init__()
 
-        # Linear function 1: vocab_size --> 500
         self.fc1 = nn.Linear(input_dim, hidden_dim)
-        # Non-linearity 1
         self.relu1 = nn.ReLU()
-
-        # # Linear function 2: 500 --> 500
-        # self.fc2 = nn.Linear(hidden_dim, hidden_dim)
-        # # Non-linearity 2
-        # self.relu2 = nn.ReLU()
-
-        # Linear function 2 (readout): 500 --> 3
         self.fc2 = nn.Linear(hidden_dim, output_dim)
 
     def forward(self, x):
-        # Linear function 1
         out = self.fc1(x)
-        # Non-linearity 1
         out = self.relu1(out)
-
-        # # Linear function 2
-        # out = self.fc2(out)
-        # # Non-linearity 2
-        # out = self.relu2(out)
-
-        # Linear function 3 (readout)
         out = self.fc2(out)
-
         return F.softmax(out, dim=1)
 
 
