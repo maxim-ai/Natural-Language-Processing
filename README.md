@@ -7,7 +7,7 @@ There are three assignments regarding the natural language process.
 
 ### Noisy Channel and a Probabilistic Spell Checker
 A spell checker that handles both non-word and real-word errors given in a sentential context.
-- Builds a language model.
+- Builds a language model from a corpus.
 - Uses noisy channel model and probabilistic evaluations.
 - Checks whether the sentence has a spelling error and corrects it.
 
